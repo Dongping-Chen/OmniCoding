@@ -2,7 +2,7 @@
 
 [arXiv:2606.00579](https://arxiv.org/abs/2606.00579)
 
-Code and dataset are currently under review and will be made available soon.
+Due to review-related constraints, code and dataset are currently under review and will be made available soon.
 
 ## Overview
 
