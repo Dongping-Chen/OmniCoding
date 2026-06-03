@@ -29,15 +29,15 @@ Key results:
 
 ## Figures
 
-![Accuracy-token tradeoff](Paper/Figs/token_usage.png)
+![Accuracy-token tradeoff](assets/token_usage.png)
 
 Sandboxed coding agents are competitive with native omni-modal models while selectively consuming far less media context.
 
-![Tool-use distribution](Paper/Figs/tool_use_1x6.png)
+![Tool-use distribution](assets/tool_use.png)
 
 Agents rely on staged tool pipelines across benchmarks, with frequent use of search, media extraction, transcription, OCR, and Python.
 
-![Skill accuracy](Paper/Figs/omni_coding_agent_sheet2_skill_accuracy.png)
+![Skill accuracy](assets/skill_accuracy.png)
 
 Reusable skills and log-driven self-distillation substantially improve OmniGAIA accuracy.
 
