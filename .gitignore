@@ -1,1 +1,66 @@
+# Python and test caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+build/
+dist/
+*.egg-info/
+
+# Local environments and credentials
+.venv/
+.venv_*/
+.env
+.env.*
+**/.env
+**/.env.*
+*.secret
+auth.json
+**/auth.json
+tavily_keys.txt
+yt_cookies.txt
+cloudflared.yml
+tunnel_url.txt
+
+# Runtime state and generated results
+/data/
+/datasets/
+/media/
+/models/
+/outputs/
+/artifacts/
+/checkpoints/
+/logs/
+/scratch/
+/wandb/
+*.log
+*.out
+*.err
+slurm-*.out
+*.pid
+
+# Large/generated formats. Small committed fixtures must live under tests/fixtures.
+*.parquet
+*.safetensors
+*.bin
+*.pt
+*.pth
+*.ckpt
+*.mp4
+*.mkv
+*.wav
+*.mp3
+*.tar
+*.tar.gz
+*.tar.zst
+*.zip
+
+# Local release staging only
+.migration/
+source-snapshots/
+
+# Local paper-writing workspace
 Paper/

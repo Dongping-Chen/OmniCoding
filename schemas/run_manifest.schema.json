@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.org/omnicoding/run-manifest.schema.json",
+  "title": "OmniCoding run manifest",
+  "type": "object",
+  "required": [
+    "run_id",
+    "stage",
+    "code_revision",
+    "model",
+    "dataset",
+    "created_at"
+  ],
+  "properties": {
+    "run_id": {"type": "string", "minLength": 1},
+    "stage": {
+      "enum": ["benchmark", "synthetic", "sft", "inference", "rl"]
+    },
+    "code_revision": {"type": "string", "minLength": 7},
+    "created_at": {"type": "string", "format": "date-time"},
+    "model": {"$ref": "#/$defs/artifact"},
+    "dataset": {"$ref": "#/$defs/artifact"},
+    "benchmark": {"$ref": "#/$defs/artifact"},
+    "harness": {"type": "string"},
+    "executor": {"type": "string"},
+    "parameters": {"type": "object"},
+    "outputs": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/artifact"}
+    }
+  },
+  "$defs": {
+    "artifact": {
+      "type": "object",
+      "required": ["id", "revision"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "revision": {"type": "string", "minLength": 1},
+        "sha256": {"type": "string", "pattern": "^[a-fA-F0-9]{64}$"}
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": false
+}

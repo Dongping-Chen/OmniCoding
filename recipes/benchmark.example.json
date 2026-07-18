@@ -1,0 +1,25 @@
+{
+  "run_id": "benchmark-smoke-001",
+  "stage": "benchmark",
+  "code_revision": "REPLACE_WITH_GIT_COMMIT",
+  "created_at": "2026-01-01T00:00:00Z",
+  "model": {
+    "id": "shuaishuaicdp/Code-X-SFT-27B",
+    "revision": "REPLACE_WITH_MODEL_COMMIT"
+  },
+  "dataset": {
+    "id": "YOUR_ORG/omnigaia",
+    "revision": "REPLACE_WITH_DATASET_COMMIT"
+  },
+  "benchmark": {
+    "id": "omnigaia",
+    "revision": "REPLACE_WITH_DATASET_COMMIT"
+  },
+  "harness": "kira",
+  "executor": "slurm",
+  "parameters": {
+    "max_items": 8,
+    "reasoning_effort": "high"
+  },
+  "outputs": []
+}

@@ -1,0 +1,60 @@
+[build-system]
+requires = ["setuptools>=77", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "omnicoding"
+version = "0.1.0.dev0"
+description = "Coding-agent harnesses, multimodal benchmarks, synthetic data, SFT, and RL recipes"
+readme = "README.md"
+license = "CC-BY-NC-4.0"
+license-files = ["LICENSE", "LICENSES/*.txt", "THIRD_PARTY_NOTICES.md"]
+requires-python = ">=3.10"
+dependencies = [
+  "litellm>=1.60",
+  "requests>=2.31",
+  "tenacity>=8.2",
+]
+
+[project.optional-dependencies]
+benchmark = [
+  "pillow>=10",
+]
+rl = [
+  "fastapi>=0.115",
+  "httpx>=0.27",
+  "pillow>=10",
+  "pydantic>=2.7",
+  "uvicorn>=0.30",
+]
+rl-data = [
+  "pyarrow>=15",
+]
+dev = [
+  "build>=1.2",
+  "pytest>=8",
+  "pytest-asyncio>=0.23",
+]
+
+[project.scripts]
+omnicoding-run = "omnicoding.cli:main"
+omnicoding-bench-codex = "omnicoding.harnesses.codex:main"
+omnicoding-bench-claude = "omnicoding.harnesses.claude:main"
+omnicoding-bench-kira = "omnicoding.harnesses.kira:cli_main"
+web_search = "omnicoding.tools.web_search:main"
+omnicoding-tavily-mcp = "omnicoding.tools.tavily_mcp:main"
+omnicoding-data-convert = "omnicoding.data.conversion:main"
+omnicoding-data-filter = "omnicoding.data.filtering:main"
+omnicoding-data-rescore = "omnicoding.data.rescore:main"
+omnicoding-data-audit = "omnicoding.data.audit_runs:main"
+omnicoding-data-dispatch = "omnicoding.data.dispatch:main"
+omnicoding-verify-prompt-parity = "omnicoding.data.verify_prompt_parity:main"
+omnicoding-rl-worker = "omnicoding.rl.run_trajectory:main"
+omnicoding-rl-build-prompts = "omnicoding.rl.build_prompt_set:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q --tb=short"

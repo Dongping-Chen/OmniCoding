@@ -1,0 +1,61 @@
+version: 1
+policy:
+  source_workspaces_are_read_only: true
+  copy_mode: allowlist
+  include_generated_artifacts: false
+
+sources:
+  omnicoding:
+    repository: https://github.com/Dongping-Chen/OmniCoding.git
+    archival_label: OmniCoding
+    revision: 341bb33f81fa1c8ed486628e49e2f42bf74fd2be
+    dirty_worktree_audited: true
+  dataset_pipeline:
+    repository: null
+    archival_label: coding-agent-rl
+    revision: null
+    dirty_worktree_audited: null
+  ms_swift:
+    repository: https://github.com/modelscope/ms-swift.git
+    archival_label: ms-swift
+    revision: 68eae8c20bdffce8bab05f732d8b2934578bee88
+    dirty_worktree_audited: false
+  relax:
+    repository: https://github.com/Dongping-Chen/Relax.git
+    archival_label: Relax
+    revision: 9a717a82aa20a1088f725cb56990c6186e0fb7a0
+    dirty_worktree_audited: true
+
+mappings:
+  - source: omnicoding/local_model/kira
+    destination: src/omnicoding/agents/kira
+    kind: python_package
+    status: migrated
+  - source: omnicoding/coding_agent_benchmarks_1/benchmarks/common
+    destination: src/omnicoding/benchmarks/common
+    kind: python_package
+    status: migrated
+  - source: omnicoding/coding_agent_benchmarks_1/benchmarks/specs
+    destination: src/omnicoding/benchmarks/specs
+    kind: python_package
+    status: migrated
+  - source: omnicoding/coding_agent_benchmarks_1/benchmarks/*/*prompting.py
+    destination: src/omnicoding/benchmarks/prompts
+    kind: python_modules
+    status: migrated
+  - source: omnicoding/local_model/scripts
+    destination: src/omnicoding/harnesses and src/omnicoding/data
+    kind: selected_python_modules
+    status: migrated
+  - source: dataset_pipeline/scripts
+    destination: src/omnicoding/data/source_pipeline
+    kind: selected_python_modules
+    status: pending_license_review
+  - source: ms_swift/scripts/modal and ms_swift/scripts/merge_lora.py
+    destination: integrations/ms_swift
+    kind: integration_scripts
+    status: migrated_as_parameterized_templates
+  - source: relax/relax-router
+    destination: src/omnicoding/rl and integrations/relax
+    kind: integration_package
+    status: migrated_and_security_hardened

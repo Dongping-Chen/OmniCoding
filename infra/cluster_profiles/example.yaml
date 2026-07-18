@@ -1,0 +1,14 @@
+name: example
+executor: slurm
+workspace_root: /path/to/workspace
+cache_root: /path/to/cache
+slurm:
+  account: YOUR_ACCOUNT
+  partition: YOUR_PARTITION
+  gpu_type: YOUR_GPU_TYPE
+  cpus_per_task: 16
+  memory: 128G
+environment:
+  hf_home: /path/to/cache/huggingface
+  wandb_mode: offline
+

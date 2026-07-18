@@ -1,0 +1,28 @@
+diff --git a/relax/components/rollout.py b/relax/components/rollout.py
+index d76a8e3..a6b0652 100644
+--- a/relax/components/rollout.py
++++ b/relax/components/rollout.py
+@@ -310,10 +310,21 @@ def satisfy_staleness(partition_list: Optional[List[str]], current_rollout_id: i
+     return current_rollout_id + 1 - min(list(map(split_partition, partition_list))) <= max_staleness
+ 
+ 
+-@serve.deployment
++@serve.deployment(max_ongoing_requests=256, max_queued_requests=512)
+ @serve.ingress(app)
+ class Rollout(Base):
+-    """The class to run rollout and convert rollout data to training data."""
++    """The class to run rollout and convert rollout data to training data.
++
++    The deployment-level concurrency knobs above (added 2026-05-04) lift
++    Ray Serve's default ``max_ongoing_requests=5`` cap. With the default,
++    the proxy serializes incoming /v1/chat/completions calls to ≤5 in
++    flight even though SGLang routers + engines downstream can handle
++    hundreds of concurrent requests. Empirically: ~100 concurrent kira
++    workers, but only 1 reaches an SGLang engine at any moment, and only
++    1 of 4 engines ever sees traffic. Bumping the proxy cap is a
++    necessary first fix; ensuring the SGLang router actually load-
++    balances across engines is a separate downstream issue.
++    """
+ 
+     def __init__(
+         self,

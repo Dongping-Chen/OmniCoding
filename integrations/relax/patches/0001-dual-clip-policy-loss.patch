@@ -1,0 +1,15 @@
+diff --git a/relax/backends/megatron/loss.py b/relax/backends/megatron/loss.py
+index 47530f0..9daaeeb 100644
+--- a/relax/backends/megatron/loss.py
++++ b/relax/backends/megatron/loss.py
+@@ -743,7 +743,9 @@ def policy_loss_function(
+             ppo_kl=ppo_kl, advantages=advantages, tau_pos=tau_pos, tau_neg=tau_neg
+         )
+     else:
+-        pg_loss, pg_clipfrac = compute_policy_loss(ppo_kl, advantages, args.eps_clip, args.eps_clip_high)
++        pg_loss, pg_clipfrac = compute_policy_loss(
++            ppo_kl, advantages, args.eps_clip, args.eps_clip_high, args.eps_clip_c
++        )
+ 
+     if args.use_opsm:
+         pg_loss = pg_loss * opsm_mask
