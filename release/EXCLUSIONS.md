@@ -6,7 +6,9 @@ The migration must not copy any of the following from source workspaces:
 - live domains, tunnel IDs, Modal tokens, account IDs, or private endpoint URLs;
 - dataset JSONL/Parquet, benchmark media, decoded images, audio, or video;
 - model weights, adapters, optimizer state, checkpoints, or framework caches;
-- outputs, trajectories, logs, W&B runs, Slurm logs, PID files, or scratch;
+- output/trajectory payloads, logs, W&B runs, Slurm logs, PID files, or
+  scratch; sanitized selection manifests containing no raw model/tool content
+  may be generated in staging after review;
 - virtual environments, Node installs, compiled files, or `__pycache__`;
 - historical retry/redo/revive/fill scripts unless rewritten as a canonical,
   parameterized recovery mechanism;

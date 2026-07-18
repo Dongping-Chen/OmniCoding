@@ -82,6 +82,31 @@ VideoZeroBench, and TerminalBench-O. This initial code release includes public
 adapters for OmniGAIA, SocialOmni Levels 1 and 2, LVOmniBench, and
 VideoZeroBench.
 
+### Evaluation subsets
+
+The archived runs did not all use every item exposed by each upstream
+benchmark. LVOmniBench and both SocialOmni levels use the first 100 rows in the
+pinned upstream order. VideoZeroBench uses the official fixed 500-question
+file. The audited Codex gpt-5.5 xhigh and Code-X 27B OmniGAIA runs use the full
+360-item test metadata; a first-100 OmniGAIA recipe is also retained for the
+smaller development/baseline jobs.
+
+These are deterministic positional slices, not random samples. Exact upstream
+revisions, source files, row counts, stable ID fields, and output SHA256 values
+are recorded in [recipes/eval_subsets.json](recipes/eval_subsets.json). Follow
+the [subset reconstruction recipe](docs/EVAL_SUBSETS.md) to rebuild and verify
+the same evaluation inputs. Scores over different slices should not be
+compared directly.
+
+### Trajectory availability
+
+The [trajectory audit](release/TRAJECTORY_AUDIT.md) records what is retained for
+each harness × model × benchmark combination. It includes a reproducible Qwen
+retry selector that joins attempts by stable question ID and keeps one judged-
+correct, complete trajectory per item. The checked-in manifests contain paths
+and completeness metadata only; raw trajectories and processed benchmark
+images have not yet been copied into this repository or published as data.
+
 ## Repository layout
 
 ```text
@@ -97,7 +122,7 @@ integrations/
   relax/                pinned RL integration and reviewable upstream patches
 infra/slurm/             portable Slurm templates for harness, SFT, serving, RL
 recipes/                 example run configuration
-release/                 source map, exclusions, and license review records
+release/                 source, trajectory, exclusion, and license audits
 tests/                   unit, integration, security, and packaging tests
 ```
 

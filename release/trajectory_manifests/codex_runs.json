@@ -1,0 +1,92 @@
+{
+  "schema_version": 1,
+  "scope": "read-only audit of retained Codex CLI result payloads; no trajectory payloads are copied into this repository",
+  "runs": [
+    {
+      "harness": "codex_cli",
+      "model": "gpt-5.5",
+      "reasoning_effort": "xhigh",
+      "benchmark": "omnigaia",
+      "evaluation_slice": "omnigaia_full360",
+      "items": 360,
+      "trajectory_field": "codex_stdout_tail",
+      "items_with_field": 360,
+      "completeness": "partial_tail_only",
+      "source_label": "codex_5.5_xhigh_trajectories/omnigaia"
+    },
+    {
+      "harness": "codex_cli",
+      "model": "gpt-5.5",
+      "reasoning_effort": "xhigh",
+      "benchmark": "lvomnibench",
+      "evaluation_slice": "lvomnibench_first100",
+      "items": 100,
+      "trajectory_field": "codex_stdout",
+      "items_with_field": 100,
+      "completeness": "full_jsonl_event_stream",
+      "source_label": "codex_5.5_xhigh_trajectories/lvomnibench",
+      "comment": "99 items are in the merged file; question 0094 is in the retained rerun sibling"
+    },
+    {
+      "harness": "codex_cli",
+      "model": "gpt-5.5",
+      "reasoning_effort": "xhigh",
+      "benchmark": "socialomni_l1",
+      "evaluation_slice": "socialomni_l1_first100",
+      "items": 100,
+      "trajectory_field": "codex_stdout",
+      "items_with_field": 100,
+      "completeness": "full_jsonl_event_stream",
+      "source_label": "codex_5.5_xhigh_trajectories/socialomni_l1"
+    },
+    {
+      "harness": "codex_cli",
+      "model": "gpt-5.5",
+      "reasoning_effort": "xhigh",
+      "benchmark": "socialomni_l2",
+      "evaluation_slice": "socialomni_l2_first100",
+      "items": 100,
+      "trajectory_field": "codex_stdout_q1/codex_stdout_q2",
+      "items_with_field": 100,
+      "completeness": "full_q1_jsonl; q2 stream retained for 36 items",
+      "source_label": "codex_5.5_xhigh_trajectories/socialomni_l2"
+    },
+    {
+      "harness": "codex_cli",
+      "model": "gpt-5.4",
+      "reasoning_effort": "low",
+      "benchmark": "omnigaia",
+      "evaluation_slice": "omnigaia_full360",
+      "items": 360,
+      "trajectory_field": "codex_stdout_tail",
+      "items_with_field": 360,
+      "completeness": "partial_tail_only",
+      "source_label": "omnigaia/outputs/humanskill_low"
+    },
+    {
+      "harness": "codex_cli",
+      "model": "gpt-5.4",
+      "reasoning_effort": "medium",
+      "benchmark": "omnigaia",
+      "evaluation_slice": "omnigaia_full360",
+      "items": 360,
+      "trajectory_field": "codex_stdout_tail",
+      "items_with_field": 360,
+      "completeness": "partial_tail_only",
+      "source_label": "omnigaia/outputs/humanskill_medium"
+    },
+    {
+      "harness": "codex_cli",
+      "model": "gpt-5.4",
+      "reasoning_effort": "xhigh",
+      "benchmark": "omnigaia",
+      "evaluation_slice": "omnigaia_full360",
+      "items": 332,
+      "trajectory_field": "codex_stdout_tail",
+      "items_with_field": 332,
+      "completeness": "partial_run_and_partial_tail_only",
+      "source_label": "omnigaia/outputs/humanskill_xhigh",
+      "comment": "retained merged artifact is explicitly marked partial; rerun files exist but no audited final 360-item merge was located"
+    }
+  ]
+}

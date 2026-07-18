@@ -47,13 +47,18 @@ omnicoding-data-convert = "omnicoding.data.conversion:main"
 omnicoding-data-filter = "omnicoding.data.filtering:main"
 omnicoding-data-rescore = "omnicoding.data.rescore:main"
 omnicoding-data-audit = "omnicoding.data.audit_runs:main"
+omnicoding-data-trajectory-inventory = "omnicoding.data.trajectory_inventory:main"
 omnicoding-data-dispatch = "omnicoding.data.dispatch:main"
 omnicoding-verify-prompt-parity = "omnicoding.data.verify_prompt_parity:main"
+omnicoding-bench-subset = "omnicoding.benchmarks.subsets:main"
 omnicoding-rl-worker = "omnicoding.rl.run_trajectory:main"
 omnicoding-rl-build-prompts = "omnicoding.rl.build_prompt_set:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+"omnicoding.benchmarks" = ["eval_subsets.json"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

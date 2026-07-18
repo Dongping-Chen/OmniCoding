@@ -1,0 +1,75 @@
+{
+  "schema_version": 1,
+  "subsets": {
+    "lvomnibench_first100": {
+      "repo_id": "KD-TAO/LVOmniBench",
+      "revision": "4624d38b1bbd1fdae15b3c06b87ebe515823d145",
+      "source_file": "data.json",
+      "selection": "first_n",
+      "count": 100,
+      "expected_count": 100,
+      "id_field": "question_id",
+      "output_sha256": "713813369ebd90d153bf8328e5c88d8a45e6bf5e3d1ae38448bd46b48a5a5540"
+    },
+    "omnigaia_first100": {
+      "repo_id": "RUC-NLPIR/OmniGAIA",
+      "revision": "adf542cf70735e061b8d73300cdbae9c847b9bc3",
+      "source_file": "test_metadata.json",
+      "source_sha256": "f85f44bb6d2aa43656106906517a52c92b053844d54a5bc96ad9a2abe973f27a",
+      "selection": "first_n",
+      "count": 100,
+      "expected_source_count": 360,
+      "expected_count": 100,
+      "id_field": "id",
+      "output_sha256": "a15e7b2c87256a1998eeb55b0bd1f39a67a0949ce3bf23692992152ed601539f"
+    },
+    "omnigaia_full360": {
+      "repo_id": "RUC-NLPIR/OmniGAIA",
+      "revision": "adf542cf70735e061b8d73300cdbae9c847b9bc3",
+      "source_file": "test_metadata.json",
+      "source_sha256": "f85f44bb6d2aa43656106906517a52c92b053844d54a5bc96ad9a2abe973f27a",
+      "selection": "all",
+      "expected_source_count": 360,
+      "expected_count": 360,
+      "id_field": "id",
+      "output_sha256": "f85f44bb6d2aa43656106906517a52c92b053844d54a5bc96ad9a2abe973f27a"
+    },
+    "socialomni_l1_first100": {
+      "repo_id": "alexisty/SocialOmni",
+      "revision": "3b76009b45090eaa54007454c93a831f3cc8e1e6",
+      "source_file": "data/level_1/dataset.json",
+      "source_sha256": "051f2e7ca0618de6e78843c64a3800606904be819f47c1e5c771f1c6a49faa23",
+      "selection": "first_n",
+      "count": 100,
+      "expected_source_count": 2000,
+      "expected_count": 100,
+      "id_field": "id",
+      "output_sha256": "96bee8884ada7a6a57b58f5c581b5969b43028a8a7149e5b6174439ee9508098"
+    },
+    "socialomni_l2_first100": {
+      "repo_id": "alexisty/SocialOmni",
+      "revision": "3b76009b45090eaa54007454c93a831f3cc8e1e6",
+      "source_file": "data/level_2/annotations.json",
+      "source_sha256": "87137aa2270f65e9c9e124e54dc5b73d9fe9c4bf9317219a4efe88feb036c058",
+      "wrapper_field": "data",
+      "count_field": "total_samples",
+      "selection": "first_n",
+      "count": 100,
+      "expected_source_count": 209,
+      "expected_count": 100,
+      "id_field": "video_id",
+      "output_sha256": "cb46b41b8cc530a693d785235f4c1a49e5c40b0e887d73364070add4447e6742"
+    },
+    "videozerobench_official500": {
+      "repo_id": "marinero4972/VideoZeroBench",
+      "revision": "aef3b0613ad2909a1355a99201b4a0c48e073836",
+      "source_file": "VideoZeroBench_500_v0.json",
+      "source_sha256": "e07b42efc3d271a421c5dcccb807ea913a079bb1cdc3d4423215ad0f3af061f1",
+      "selection": "all",
+      "expected_source_count": 500,
+      "expected_count": 500,
+      "id_field": "question_id",
+      "output_sha256": "e07b42efc3d271a421c5dcccb807ea913a079bb1cdc3d4423215ad0f3af061f1"
+    }
+  }
+}
