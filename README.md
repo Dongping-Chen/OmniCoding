@@ -1,5 +1,19 @@
 # OmniCoding
 
+<div align="center">
+  <p>
+    <a href="https://arxiv.org/abs/2606.00579"><img src="https://img.shields.io/badge/arXiv-2606.00579-b31b1b.svg" alt="arXiv"></a>
+    <a href="https://huggingface.co/shuaishuaicdp/Code-X-SFT-27B"><img src="https://img.shields.io/badge/Hugging_Face-Code--X--SFT--27B-FFD21E?logo=huggingface&amp;logoColor=black" alt="Hugging Face model"></a>
+    <img src="https://img.shields.io/badge/python-%E2%89%A53.10-blue?logo=python&amp;logoColor=white" alt="Python 3.10 or newer">
+    <a href="LICENSE"><img src="https://img.shields.io/badge/license-CC_BY--NC_4.0-green" alt="CC BY-NC 4.0 license"></a>
+    <a href="https://github.com/Dongping-Chen/OmniCoding/actions/workflows/tests.yml"><img src="https://github.com/Dongping-Chen/OmniCoding/actions/workflows/tests.yml/badge.svg?branch=main" alt="Tests"></a>
+  </p>
+  <p>
+    <a href="https://github.com/Dongping-Chen/OmniCoding/graphs/commit-activity"><img src="https://img.shields.io/github/commit-activity/m/Dongping-Chen/OmniCoding?label=commit%20activity" alt="Monthly commit activity"></a>
+    <a href="https://github.com/Dongping-Chen/OmniCoding/issues?q=is%3Aissue%20is%3Aclosed"><img src="https://img.shields.io/github/issues-search?query=repo%3ADongping-Chen%2FOmniCoding%20is%3Aissue%20is%3Aclosed&amp;label=issues%20closed&amp;labelColor=%237d89b0&amp;color=%235d6b98" alt="Issues closed"></a>
+  </p>
+</div>
+
 Official codebase for **Sandboxed Coding Agents are Competitive Omni-modal
 Task Solvers** ([arXiv:2606.00579](https://arxiv.org/abs/2606.00579)).
 
