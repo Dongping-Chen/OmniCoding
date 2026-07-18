@@ -34,7 +34,7 @@ The release gate also checks that:
 - the Relax patches apply in order to the pinned fork baseline;
 - no credential values, private workspace paths, symlinks, model weights, or
   generated training outputs are committed;
-- the wheel contains the project license and third-party notices.
+- the wheel contains the project license and bundled Apache-2.0 license copy.
 
 GitHub Actions repeats the install, shell-syntax, and pytest checks on Python
 3.10 and 3.11.

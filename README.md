@@ -32,15 +32,17 @@ process-aware verifiable reward.
 
 ## Resources
 
-- Paper: [arXiv:2606.00579](https://arxiv.org/abs/2606.00579)
-- Model: [Code-X-SFT-27B](https://huggingface.co/shuaishuaicdp/Code-X-SFT-27B)
-- Data and benchmark release policy: [docs/DATA_RELEASE.md](docs/DATA_RELEASE.md)
-- Source/provenance map: [PROVENANCE.md](PROVENANCE.md)
+| Data | Use | HuggingFace Link | Comment |
+|---|---|---|---|
+| OmniCoding SFT Dataset | Supervised fine-tuning | [🤗 Dataset](https://huggingface.co/datasets/shuaishuaicdp/OmniCoding/blob/main/processed/sft_train.jsonl) | 4,042 refined records for synthetic cold-start SFT |
+| OmniCoding RL Dataset | Reinforcement learning | [🤗 Dataset](https://huggingface.co/datasets/shuaishuaicdp/OmniCoding/blob/main/processed/rl_train.jsonl) | 1,993 records with verifiable answers for coding-agent RL |
+| OmniCoding Benchmark | Evaluation | [🤗 Dataset](https://huggingface.co/datasets/shuaishuaicdp/OmniCoding/blob/main/processed/refine/all_final.jsonl) | 6,035 refined multimodal QA records with source and license metadata |
+| Code-X-SFT-27B | Inference and evaluation | [🤗 Model](https://huggingface.co/shuaishuaicdp/Code-X-SFT-27B) | 27B SFT checkpoint based on Qwen3.6-27B |
 
 The 27B release is a supervised fine-tune of
-[Qwen/Qwen3.6-27B](https://huggingface.co/Qwen/Qwen3.6-27B). Synthetic dataset
-links will be added separately after the corresponding source and media
-license checks are complete.
+[Qwen/Qwen3.6-27B](https://huggingface.co/Qwen/Qwen3.6-27B). The three data
+artifacts above are hosted in one Hugging Face dataset repository; individual
+records retain their upstream source and license metadata.
 
 ## Approach
 
@@ -151,13 +153,37 @@ generated commands. The RL coordinator requires bearer authentication,
 request bounds, model/origin allowlists, media-path containment, and a small
 environment allowlist. See [docs/RL_SECURITY.md](docs/RL_SECURITY.md).
 
+## Acknowledgements
+
+OmniCoding builds on and adapts ideas or code from the following open-source
+projects. Their original license terms continue to apply; the project-level
+CC BY-NC 4.0 license does not replace them.
+
+- [KRAFTON-AI/KIRA](https://github.com/KRAFTON-AI/KIRA) (Apache-2.0):
+  coding-agent loop, tools, provider, serialization, and recovery patterns.
+- [redai-infra/Relax](https://github.com/redai-infra/Relax) and the audited
+  [Dongping-Chen/Relax](https://github.com/Dongping-Chen/Relax) fork
+  (Apache-2.0): RL runtime, reviewable core patches, rollout, and coordinator
+  integration. Relax also attributes parts of its implementation to
+  [THUDM/slime](https://github.com/THUDM/slime) and
+  [OpenRLHF/OpenRLHF](https://github.com/OpenRLHF/OpenRLHF).
+- [ModelScope ms-swift](https://github.com/modelscope/ms-swift) (Apache-2.0):
+  parameterized SFT and checkpoint-consolidation integration.
+- [Qwen/Qwen3.6-27B](https://huggingface.co/Qwen/Qwen3.6-27B): base checkpoint
+  for Code-X-SFT-27B.
+
+Benchmark records, media, and labels are not relicensed by OmniCoding. The
+released data preserves per-record source and license fields, and users must
+comply with the corresponding upstream terms. A copy of Apache License 2.0 is
+provided in [LICENSES/Apache-2.0.txt](LICENSES/Apache-2.0.txt).
+
 ## License
 
 Project-specific code and documentation are released under
 [CC BY-NC 4.0](LICENSE). This is a non-commercial research release. Third-party
-and adapted components retain their original licenses and attribution; see
-[PROVENANCE.md](PROVENANCE.md) and [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
-Datasets, benchmark media, and model checkpoints may have separate terms.
+and adapted components retain their original licenses and attribution as
+listed in [Acknowledgements](#acknowledgements). Datasets, benchmark media,
+and model checkpoints may have separate terms.
 
 ## Citation
 
