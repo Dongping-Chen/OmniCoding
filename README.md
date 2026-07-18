@@ -34,15 +34,22 @@ process-aware verifiable reward.
 
 | Data | Use | HuggingFace Link | Comment |
 |---|---|---|---|
-| OmniCoding SFT Dataset | Supervised fine-tuning | [🤗 Dataset](https://huggingface.co/datasets/shuaishuaicdp/OmniCoding/blob/main/processed/sft_train.jsonl) | 4,042 refined records for synthetic cold-start SFT |
-| OmniCoding RL Dataset | Reinforcement learning | [🤗 Dataset](https://huggingface.co/datasets/shuaishuaicdp/OmniCoding/blob/main/processed/rl_train.jsonl) | 1,993 records with verifiable answers for coding-agent RL |
-| OmniCoding Benchmark | Evaluation | [🤗 Dataset](https://huggingface.co/datasets/shuaishuaicdp/OmniCoding/blob/main/processed/refine/all_final.jsonl) | 6,035 refined multimodal QA records with source and license metadata |
+| OmniCoding SFT Task Dataset | SFT trajectory collection | [🤗 Dataset](https://huggingface.co/datasets/shuaishuaicdp/OmniCoding/blob/ecc1fa1b8297aca618a931ad322de4d4cb75fd65/processed/sft_train.jsonl) | 4,042 refined tasks; collect successful coding-agent trajectories and convert them to ms-swift Agent JSONL before training |
+| OmniCoding RL Prompt Dataset | RL prompt construction | [🤗 Dataset](https://huggingface.co/datasets/shuaishuaicdp/OmniCoding/blob/ecc1fa1b8297aca618a931ad322de4d4cb75fd65/processed/rl_train.jsonl) | 1,993 prompts with verifiable answers used to construct Relax prompt data |
+| OmniCoding Source Benchmark Corpus | Task curation and reconstruction | [🤗 Dataset](https://huggingface.co/datasets/shuaishuaicdp/OmniCoding/blob/ecc1fa1b8297aca618a931ad322de4d4cb75fd65/processed/refine/all_final.jsonl) | 6,035-row pre-split source corpus used to form the SFT and RL task splits; **not** a held-out evaluation set |
 | Code-X-SFT-27B | Inference and evaluation | [🤗 Model](https://huggingface.co/shuaishuaicdp/Code-X-SFT-27B) | 27B SFT checkpoint based on Qwen3.6-27B |
 
 The 27B release is a supervised fine-tune of
 [Qwen/Qwen3.6-27B](https://huggingface.co/Qwen/Qwen3.6-27B). The three data
-artifacts above are hosted in one Hugging Face dataset repository; individual
-records retain their upstream source and license metadata.
+artifacts above are hosted in one Hugging Face dataset repository at the
+pinned revision shown in the table.
+
+> **Data notice:** The dataset aggregates sources with different upstream
+> terms. Some records or media originate from CC BY-NC-ND or
+> unspecified-license sources. Repository availability and per-record metadata
+> do not grant redistribution or reuse rights. Use only license-compatible
+> subsets and consult the [data license review](release/DATA_LICENSE_REVIEW.md)
+> and each upstream source before use.
 
 ## Approach
 
@@ -165,17 +172,19 @@ CC BY-NC 4.0 license does not replace them.
   [Dongping-Chen/Relax](https://github.com/Dongping-Chen/Relax) fork
   (Apache-2.0): RL runtime, reviewable core patches, rollout, and coordinator
   integration. Relax also attributes parts of its implementation to
-  [THUDM/slime](https://github.com/THUDM/slime) and
-  [OpenRLHF/OpenRLHF](https://github.com/OpenRLHF/OpenRLHF).
+  [THUDM/slime](https://github.com/THUDM/slime) (Apache-2.0) and
+  [OpenRLHF/OpenRLHF](https://github.com/OpenRLHF/OpenRLHF) (Apache-2.0).
 - [ModelScope ms-swift](https://github.com/modelscope/ms-swift) (Apache-2.0):
   parameterized SFT and checkpoint-consolidation integration.
 - [Qwen/Qwen3.6-27B](https://huggingface.co/Qwen/Qwen3.6-27B): base checkpoint
   for Code-X-SFT-27B.
 
 Benchmark records, media, and labels are not relicensed by OmniCoding. The
-released data preserves per-record source and license fields, and users must
-comply with the corresponding upstream terms. A copy of Apache License 2.0 is
-provided in [LICENSES/Apache-2.0.txt](LICENSES/Apache-2.0.txt).
+released data preserves per-record source and license fields, but users must
+still comply with the corresponding upstream terms and the current
+[data release decision record](release/DATA_LICENSE_REVIEW.md). A copy of
+Apache License 2.0 is provided in
+[LICENSES/Apache-2.0.txt](LICENSES/Apache-2.0.txt).
 
 ## License
 
