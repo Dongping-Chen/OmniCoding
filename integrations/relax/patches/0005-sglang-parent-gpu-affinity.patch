@@ -1,8 +1,8 @@
 diff --git a/relax/backends/sglang/sglang_engine.py b/relax/backends/sglang/sglang_engine.py
-index 5bc0f40..d5a5018 100644
+index 5bc0f40..ff7650b 100644
 --- a/relax/backends/sglang/sglang_engine.py
 +++ b/relax/backends/sglang/sglang_engine.py
-@@ -77,35 +77,47 @@ def _patched_run_scheduler_process(*args, **kwargs):
+@@ -77,35 +77,46 @@ def _patched_run_scheduler_process(*args, **kwargs):
      return run_scheduler_process(*args, **kwargs)
  
  
@@ -26,7 +26,6 @@ index 5bc0f40..d5a5018 100644
 +    This function is a top-level target because multiprocessing uses ``spawn``.
      """
 +    import torch
-+
      from sglang.srt.entrypoints.http_server import launch_server
  
 -    launch_server(

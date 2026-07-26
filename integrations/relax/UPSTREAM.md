@@ -8,8 +8,11 @@ were verified against the public RedNote repository before release. The fork
 baseline adds the project-specific `relax-router` subtree and a Qwen3.6-27B
 model recipe on top of that upstream revision.
 
-Apply the numbered patches in this directory in order, then install this
-monorepo into the same Python environment so Relax can import
+For an exact checkout of that older baseline, apply the numbered patches in
+this directory in order. `Dongping-Chen/Relax` commit
+`80861ad31035aeba327c3e133f6ba7d92f90e9fc` integrates the same fixes directly,
+so do not apply the patches again when using that revision or a descendant.
+Install this monorepo into the same Python environment so Relax can import
 `omnicoding.rl.rollout.generate`.
 
 The base project is `redai-infra/Relax` under Apache-2.0 and also

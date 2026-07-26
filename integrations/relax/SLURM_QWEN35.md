@@ -33,11 +33,14 @@ ray                2.56.1
 fastapi            0.133.0
 ```
 
-Apply every numbered patch under `patches/` to the pinned Relax checkout. Also
-apply `.venv/src/Relax/docker/patch/latest/megatron.patch` to the pinned
-Megatron-LM checkout. SGLang 0.5.9 is not suitable for this model: a hybrid
-GDN/Mamba cache bug can produce an illegal-memory-access failure on a later
-request even if the first rollout succeeds.
+Apply every numbered patch under `patches/` when using the older
+`6932be2fad9488f37cdbadfac1d14dbce98fe2f1` Relax baseline. Relax revision
+`80861ad31035aeba327c3e133f6ba7d92f90e9fc` already contains those changes and
+must not be patched again. Also apply
+`.venv/src/Relax/docker/patch/latest/megatron.patch` to the pinned Megatron-LM
+checkout. SGLang 0.5.9 is not suitable for this model: a hybrid GDN/Mamba
+cache bug can produce an illegal-memory-access failure on a later request even
+if the first rollout succeeds.
 
 FastAPI must remain at 0.133.0 with Ray 2.56 in this environment. FastAPI
 0.139.2 adds an unpicklable lock to the application object and breaks
