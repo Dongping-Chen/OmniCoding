@@ -180,6 +180,19 @@ def test_code_x_9b_default_training_recipe_uses_safe_8gpu_topology() -> None:
     assert "ACTOR_TP=4" not in sbatch_recipe
 
 
+def test_code_x_9b_tp8_actor_replay_stresses_previous_oom_sequence() -> None:
+    replay = Path(
+        "recipes/rl_code_x_sft_9b_8gpu_actor_replay.sbatch"
+    ).read_text(encoding="utf-8")
+    assert "#SBATCH --gres=gpu:h100:8" in replay
+    assert "export NUM_GPUS=8" in replay
+    assert "export ACTOR_TP=8" in replay
+    assert "export ACTOR_CP=1" in replay
+    assert "export MAX_TOKENS_PER_GPU=\"${MAX_TOKENS_PER_GPU:-100000}\"" in replay
+    assert "export USE_ROLLOUT_LOGPROBS=1" in replay
+    assert "export RELAX_PROFILE_TRAIN_STAGES=1" in replay
+
+
 def test_sglang_http_parent_is_pinned_to_engine_gpu() -> None:
     patch = Path(
         "integrations/relax/patches/0005-sglang-parent-gpu-affinity.patch"
