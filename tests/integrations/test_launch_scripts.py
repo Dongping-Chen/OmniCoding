@@ -196,6 +196,8 @@ def test_code_x_9b_tp8_actor_replay_stresses_previous_oom_sequence() -> None:
     assert "export RELAX_PROFILE_TRAIN_STAGES=1" in replay
     assert "#SBATCH --time=04:00:00" in replay
     assert "bash recipes/rl_code_x_sft_9b_kira_gspo.sh" in replay
+    assert "gpu-peak-memory.csv" in replay
+    assert "cuda_oom_detected" in replay
 
 
 def test_code_x_9b_actor_uses_weight_only_dcp_and_local_staging() -> None:

@@ -81,7 +81,48 @@ bash recipes/rl_code_x_sft_9b_kira_gspo.sh
 status=$?
 set -e
 finished_at="$(date +%s)"
-printf 'exit_status=%d wall_time_s=%d\n' \
-  "${status}" "$((finished_at - started_at))" \
+cleanup_monitor
+trap - EXIT INT TERM
+
+"${repo_root}/.venv/bin/python" - \
+  "${OUTPUT_ROOT}/gpu-memory.csv" \
+  "${OUTPUT_ROOT}/gpu-peak-memory.csv" <<'PY'
+import csv
+import re
+import sys
+from collections import defaultdict
+from pathlib import Path
+
+source = Path(sys.argv[1])
+destination = Path(sys.argv[2])
+peaks = defaultdict(int)
+with source.open(newline="") as handle:
+    for row in csv.reader(handle):
+        if len(row) < 3 or not row[1].strip().isdigit():
+            continue
+        match = re.search(r"\d+", row[2])
+        if match:
+            index = int(row[1].strip())
+            peaks[index] = max(peaks[index], int(match.group()))
+
+with destination.open("w", newline="") as handle:
+    writer = csv.writer(handle)
+    writer.writerow(("gpu_index", "peak_memory_mib"))
+    writer.writerows(sorted(peaks.items()))
+
+print(
+    "gpu_peak_memory_mib="
+    + ",".join(f"{index}:{memory}" for index, memory in sorted(peaks.items()))
+)
+PY
+
+oom_detected=0
+if [[ -f "${OUTPUT_ROOT}/kira-gspo.log" ]] && \
+   grep -Eiq 'CUDA out of memory|torch\\.OutOfMemoryError|OutOfMemoryError' \
+     "${OUTPUT_ROOT}/kira-gspo.log"; then
+  oom_detected=1
+fi
+printf 'exit_status=%d wall_time_s=%d cuda_oom_detected=%d\n' \
+  "${status}" "$((finished_at - started_at))" "${oom_detected}" \
   | tee "${OUTPUT_ROOT}/tp8-replay-summary.log"
 exit "${status}"
