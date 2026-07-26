@@ -13,6 +13,8 @@ venv_root="${VENV_ROOT:-${repo_root}/.venv}"
 relax_root="${RELAX_ROOT:-${venv_root}/src/Relax}"
 megatron_root="${MEGATRON_ROOT:-${venv_root}/src/Megatron-LM}"
 model_path="${MODEL_PATH:-${repo_root}/models/Qwen3.5-9B}"
+actor_load="${ACTOR_LOAD:-}"
+actor_load_weights_only="${ACTOR_LOAD_WEIGHTS_ONLY:-1}"
 prompt_data="${PROMPT_DATA:-${repo_root}/data/omnicoding/processed/rl_mcq_prompts.parquet}"
 rl_train_jsonl="${RL_TRAIN_JSONL:-${repo_root}/data/omnicoding/processed/rl_train.jsonl}"
 dataset_root="${DATASET_ROOT:-${repo_root}/data/omnicoding}"
@@ -165,6 +167,15 @@ if [[ "${use_rollout_logprobs}" != 0 && "${use_rollout_logprobs}" != 1 ]]; then
 fi
 if [[ "${disable_jit_fuser}" != 0 && "${disable_jit_fuser}" != 1 ]]; then
   echo "DISABLE_JIT_FUSER must be 0 or 1" >&2
+  exit 2
+fi
+if [[ "${actor_load_weights_only}" != 0 && "${actor_load_weights_only}" != 1 ]]; then
+  echo "ACTOR_LOAD_WEIGHTS_ONLY must be 0 or 1" >&2
+  exit 2
+fi
+if [[ -n "${actor_load}" && \
+      ! -f "${actor_load}/latest_checkpointed_iteration.txt" ]]; then
+  echo "ACTOR_LOAD is not a complete Megatron checkpoint: ${actor_load}" >&2
   exit 2
 fi
 if [[ "${debug_rollout_only}" == 1 && -n "${load_debug_rollout_data}" ]]; then
@@ -426,6 +437,12 @@ names = (
     "CUDA_HOME",
     "FLASHINFER_DISABLE_VERSION_CHECK",
     "TOKENIZERS_PARALLELISM",
+    "PYTHONPYCACHEPREFIX",
+    "TRITON_CACHE_DIR",
+    "TORCHINDUCTOR_CACHE_DIR",
+    "TORCH_EXTENSIONS_DIR",
+    "CUDA_CACHE_PATH",
+    "CUDA_CACHE_MAXSIZE",
     "RAY_SERVE_PROXY_HEALTH_CHECK_TIMEOUT_S",
     "MASTER_ADDR",
     "GLOO_SOCKET_IFNAME",
@@ -466,6 +483,7 @@ log_path="${output_root}/kira-gspo.log"
 mode_args=()
 rollout_logprob_args=()
 jit_fuser_args=()
+actor_load_args=()
 if [[ "${use_rollout_logprobs}" == 1 ]]; then
   rollout_logprob_args+=(--use-rollout-logprobs)
 fi
@@ -474,6 +492,12 @@ if [[ "${disable_jit_fuser}" == 1 ]]; then
   # RL alternates no-grad/train modes and highly variable trajectory lengths,
   # which otherwise repeatedly recompiles these helpers on the first step.
   jit_fuser_args+=(--disable-jit-fuser)
+fi
+if [[ -n "${actor_load}" ]]; then
+  actor_load_args+=(--load "${actor_load}")
+  if [[ "${actor_load_weights_only}" == 1 ]]; then
+    actor_load_args+=(--no-load-optim --no-load-rng)
+  fi
 fi
 placement_args=(--colocate)
 resource_json="{\"actor\": [1, ${num_gpus}], \"rollout\": [1, ${num_gpus}]}"
@@ -502,6 +526,7 @@ fi
   "${MODEL_ARGS[@]}" \
   --hf-checkpoint "${model_path}" \
   --megatron-to-hf-mode bridge \
+  "${actor_load_args[@]}" \
   --prompt-data "${prompt_data}" \
   --input-key prompt \
   --label-key label \

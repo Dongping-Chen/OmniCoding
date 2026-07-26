@@ -168,6 +168,9 @@ def test_code_x_9b_default_training_recipe_uses_safe_8gpu_topology() -> None:
         'MAX_TOKENS_PER_GPU:-48000',
         'SGLANG_CONTEXT_LENGTH:-131072',
         'USE_ROLLOUT_LOGPROBS:-1',
+        'STAGE_TO_LOCAL_NVME:-1',
+        'PRECONVERT_ACTOR_DCP:-1',
+        'ACTOR_DCP_CACHE:-${repo_root}/models/Code-X-SFT-9B-torch-dist',
     )
     for default in expected_defaults:
         assert default in recipe
@@ -191,6 +194,27 @@ def test_code_x_9b_tp8_actor_replay_stresses_previous_oom_sequence() -> None:
     assert "export MAX_TOKENS_PER_GPU=\"${MAX_TOKENS_PER_GPU:-100000}\"" in replay
     assert "export USE_ROLLOUT_LOGPROBS=1" in replay
     assert "export RELAX_PROFILE_TRAIN_STAGES=1" in replay
+    assert "#SBATCH --time=04:00:00" in replay
+    assert "bash recipes/rl_code_x_sft_9b_kira_gspo.sh" in replay
+
+
+def test_code_x_9b_actor_uses_weight_only_dcp_and_local_staging() -> None:
+    launcher = Path(
+        "recipes/rl_qwen35_9b_4gpu_agent_rollout_smoke.sh"
+    ).read_text(encoding="utf-8")
+    assert 'actor_load="${ACTOR_LOAD:-}"' in launcher
+    assert 'actor_load_args+=(--load "${actor_load}")' in launcher
+    assert "actor_load_args+=(--no-load-optim --no-load-rng)" in launcher
+    assert '"TRITON_CACHE_DIR",' in launcher
+    assert '"TORCHINDUCTOR_CACHE_DIR",' in launcher
+
+    preparation = Path(
+        "recipes/lib/prepare_code_x_sft_9b_runtime.sh"
+    ).read_text(encoding="utf-8")
+    assert "convert_hf_to_torch_dist.py" in preparation
+    assert "stage_hf_model" in preparation
+    assert "stage_actor_dcp" in preparation
+    assert 'local_root}/python' in preparation
 
 
 def test_sglang_http_parent_is_pinned_to_engine_gpu() -> None:

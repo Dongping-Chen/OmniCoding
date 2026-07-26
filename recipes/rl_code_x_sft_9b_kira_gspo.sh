@@ -40,5 +40,13 @@ export USE_ROLLOUT_LOGPROBS="${USE_ROLLOUT_LOGPROBS:-1}"
 export DISABLE_JIT_FUSER="${DISABLE_JIT_FUSER:-1}"
 export RELAX_PROFILE_TRAIN_STAGES="${RELAX_PROFILE_TRAIN_STAGES:-1}"
 export OUTPUT_ROOT="${OUTPUT_ROOT:-${repo_root}/outputs/relax-code-x-sft-kira-gspo/${SLURM_JOB_ID:-manual}-8gpu}"
+export STAGE_TO_LOCAL_NVME="${STAGE_TO_LOCAL_NVME:-1}"
+export PRECONVERT_ACTOR_DCP="${PRECONVERT_ACTOR_DCP:-1}"
+export ACTOR_DCP_CACHE="${ACTOR_DCP_CACHE:-${repo_root}/models/Code-X-SFT-9B-torch-dist}"
+export COLD_START_TIMING_FILE="${COLD_START_TIMING_FILE:-${OUTPUT_ROOT}/cold-start-stages.tsv}"
+
+# shellcheck disable=SC1091
+source "${repo_root}/recipes/lib/prepare_code_x_sft_9b_runtime.sh"
+prepare_code_x_sft_9b_runtime "${repo_root}"
 
 exec bash "${repo_root}/recipes/rl_qwen35_9b_4gpu_agent_rollout_smoke.sh"

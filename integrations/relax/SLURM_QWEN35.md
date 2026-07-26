@@ -19,7 +19,7 @@ runtime/*.sqsh                 generated Pyxis worker images
 The important tested pins are:
 
 ```text
-Relax              6932be2fad9488f37cdbadfac1d14dbce98fe2f1
+Relax              a08f73072acb6e004aeef500bae7ae94e8ae5234
 Megatron-LM        3714d81d418c9f1bca4594fc35f9e8289f652862
 Python             3.12.13
 torch              2.9.1+cu128
@@ -36,7 +36,10 @@ fastapi            0.133.0
 Apply every numbered patch under `patches/` when using the older
 `6932be2fad9488f37cdbadfac1d14dbce98fe2f1` Relax baseline. Relax revision
 `80861ad31035aeba327c3e133f6ba7d92f90e9fc` already contains those changes and
-must not be patched again. Also apply
+must not be patched again. Revision
+`a08f73072acb6e004aeef500bae7ae94e8ae5234` additionally contains the
+weight-only HF-to-DCP conversion tool used by the current Code-X-SFT-9B
+launcher. Also apply
 `.venv/src/Relax/docker/patch/latest/megatron.patch` to the pinned Megatron-LM
 checkout. SGLang 0.5.9 is not suitable for this model: a hybrid GDN/Mamba
 cache bug can produce an illegal-memory-access failure on a later request even
@@ -45,6 +48,35 @@ if the first rollout succeeds.
 FastAPI must remain at 0.133.0 with Ray 2.56 in this environment. FastAPI
 0.139.2 adds an unpicklable lock to the application object and breaks
 `@serve.ingress` deployment serialization.
+
+## Code-X-SFT-9B cold start
+
+The standard eight-GPU launcher prepares three distinct representations:
+
+- the Hugging Face SFT checkpoint remains the source for the tokenizer and
+  eight TP=1 SGLang rollout engines;
+- a weight-only Megatron `torch_dist` checkpoint is created atomically at
+  `models/Code-X-SFT-9B-torch-dist` and loaded by the actor with
+  `--no-load-optim --no-load-rng`;
+- the HF checkpoint, Megatron checkpoint, Relax/Megatron source trees, and
+  import-heavy Python packages are staged once per job under
+  `/tmp/omnicoding-$SLURM_JOB_ID`.
+
+Triton, TorchInductor, CUDA, and extension caches persist under
+`.cache/rl-runtime`; this path is ignored by Git. Set
+`STAGE_TO_LOCAL_NVME=0` to diagnose shared-filesystem behavior,
+`PRECONVERT_ACTOR_DCP=0` to force the old HF actor load, or
+`REQUIRE_ACTOR_DCP=1` to make conversion failure fatal. By default conversion
+failure is logged and training falls back to the original HF load so an
+expensive whole-node allocation is not discarded.
+
+The TP8 capacity replay records local staging/conversion durations in
+`cold-start-stages.tsv`, five-second GPU samples in `gpu-memory.csv`, and
+Relax actor-stage timings in `kira-gspo.log`:
+
+```bash
+sbatch recipes/rl_code_x_sft_9b_8gpu_actor_replay.sbatch
+```
 
 ## Public assets
 
