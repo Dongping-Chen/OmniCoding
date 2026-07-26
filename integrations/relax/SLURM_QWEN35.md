@@ -19,7 +19,7 @@ runtime/*.sqsh                 generated Pyxis worker images
 The important tested pins are:
 
 ```text
-Relax              a08f73072acb6e004aeef500bae7ae94e8ae5234
+Relax              ca3d9b932d93def9e1981f47cd6e577b8300b781
 Megatron-LM        3714d81d418c9f1bca4594fc35f9e8289f652862
 Python             3.12.13
 torch              2.9.1+cu128
@@ -37,7 +37,7 @@ Apply every numbered patch under `patches/` when using the older
 `6932be2fad9488f37cdbadfac1d14dbce98fe2f1` Relax baseline. Relax revision
 `80861ad31035aeba327c3e133f6ba7d92f90e9fc` already contains those changes and
 must not be patched again. Revision
-`a08f73072acb6e004aeef500bae7ae94e8ae5234` additionally contains the
+`ca3d9b932d93def9e1981f47cd6e577b8300b781` additionally contains the
 weight-only HF-to-DCP conversion tool used by the current Code-X-SFT-9B
 launcher. Also apply
 `.venv/src/Relax/docker/patch/latest/megatron.patch` to the pinned Megatron-LM
@@ -55,9 +55,9 @@ The standard eight-GPU launcher prepares three distinct representations:
 
 - the Hugging Face SFT checkpoint remains the source for the tokenizer and
   eight TP=1 SGLang rollout engines;
-- a weight-only Megatron `torch_dist` checkpoint is created atomically at
-  `models/Code-X-SFT-9B-torch-dist` and loaded by the actor with
-  `--no-load-optim --no-load-rng`;
+- a weight-only TP8 Megatron `torch_dist` checkpoint is published as a
+  `release` checkpoint at `models/Code-X-SFT-9B-mcore-tp8` and loaded by the
+  actor with `--no-load-optim --no-load-rng`;
 - the HF checkpoint, Megatron checkpoint, Relax/Megatron source trees, and
   import-heavy Python packages are staged once per job under
   `/tmp/omnicoding-$SLURM_JOB_ID`.

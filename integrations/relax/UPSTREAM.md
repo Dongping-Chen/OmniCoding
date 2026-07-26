@@ -13,7 +13,7 @@ this directory in order. `Dongping-Chen/Relax` commit
 `80861ad31035aeba327c3e133f6ba7d92f90e9fc` integrates the same fixes directly,
 so do not apply the patches again when using that revision or a descendant.
 The recommended revision is
-`a08f73072acb6e004aeef500bae7ae94e8ae5234`; it additionally provides the
+`ca3d9b932d93def9e1981f47cd6e577b8300b781`; it additionally provides the
 atomic, weight-only Hugging Face to Megatron DCP conversion used by the 9B
 cold-start path.
 Install this monorepo into the same Python environment so Relax can import

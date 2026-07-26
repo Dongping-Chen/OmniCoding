@@ -170,7 +170,7 @@ def test_code_x_9b_default_training_recipe_uses_safe_8gpu_topology() -> None:
         'USE_ROLLOUT_LOGPROBS:-1',
         'STAGE_TO_LOCAL_NVME:-1',
         'PRECONVERT_ACTOR_DCP:-1',
-        'ACTOR_DCP_CACHE:-${repo_root}/models/Code-X-SFT-9B-torch-dist',
+        'ACTOR_DCP_CACHE:-${repo_root}/models/Code-X-SFT-9B-mcore-tp${ACTOR_TP}',
     )
     for default in expected_defaults:
         assert default in recipe
@@ -204,7 +204,10 @@ def test_code_x_9b_actor_uses_weight_only_dcp_and_local_staging() -> None:
     ).read_text(encoding="utf-8")
     assert 'actor_load="${ACTOR_LOAD:-}"' in launcher
     assert 'actor_load_args+=(--load "${actor_load}")' in launcher
-    assert "actor_load_args+=(--no-load-optim --no-load-rng)" in launcher
+    assert (
+        "actor_load_args+=(--no-load-optim --no-load-rng --start-rollout-id 0)"
+        in launcher
+    )
     assert '"TRITON_CACHE_DIR",' in launcher
     assert '"TORCHINDUCTOR_CACHE_DIR",' in launcher
 

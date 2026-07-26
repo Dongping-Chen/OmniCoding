@@ -42,7 +42,7 @@ export RELAX_PROFILE_TRAIN_STAGES="${RELAX_PROFILE_TRAIN_STAGES:-1}"
 export OUTPUT_ROOT="${OUTPUT_ROOT:-${repo_root}/outputs/relax-code-x-sft-kira-gspo/${SLURM_JOB_ID:-manual}-8gpu}"
 export STAGE_TO_LOCAL_NVME="${STAGE_TO_LOCAL_NVME:-1}"
 export PRECONVERT_ACTOR_DCP="${PRECONVERT_ACTOR_DCP:-1}"
-export ACTOR_DCP_CACHE="${ACTOR_DCP_CACHE:-${repo_root}/models/Code-X-SFT-9B-torch-dist}"
+export ACTOR_DCP_CACHE="${ACTOR_DCP_CACHE:-${repo_root}/models/Code-X-SFT-9B-mcore-tp${ACTOR_TP}}"
 export COLD_START_TIMING_FILE="${COLD_START_TIMING_FILE:-${OUTPUT_ROOT}/cold-start-stages.tsv}"
 
 # shellcheck disable=SC1091

@@ -496,7 +496,10 @@ fi
 if [[ -n "${actor_load}" ]]; then
   actor_load_args+=(--load "${actor_load}")
   if [[ "${actor_load_weights_only}" == 1 ]]; then
-    actor_load_args+=(--no-load-optim --no-load-rng)
+    # A release checkpoint reports iteration zero but Relax otherwise treats
+    # it as a resumed run and begins at rollout one. This cache is immutable
+    # SFT initialization, so explicitly start the RL loop at rollout zero.
+    actor_load_args+=(--no-load-optim --no-load-rng --start-rollout-id 0)
   fi
 fi
 placement_args=(--colocate)

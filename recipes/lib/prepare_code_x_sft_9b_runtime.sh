@@ -154,13 +154,25 @@ prepare_code_x_sft_9b_runtime() {
   fi
 
   if [[ -z "${ACTOR_LOAD:-}" && "${preconvert_dcp}" == 1 ]]; then
-    local shared_dcp="${ACTOR_DCP_CACHE:-${repo_root}/models/Code-X-SFT-9B-torch-dist}"
+    local shared_dcp="${ACTOR_DCP_CACHE:-${repo_root}/models/Code-X-SFT-9B-mcore-tp${ACTOR_TP:-8}}"
     if ! _code_x_checkpoint_is_complete "${shared_dcp}"; then
       started_at="$(date +%s)"
-      if "${source_venv}/bin/python" \
-          "${RELAX_ROOT}/tools/convert_hf_to_torch_dist.py" \
+      # shellcheck disable=SC1090
+      source "${RELAX_ROOT}/scripts/models/qwen35-9B.sh"
+      if "${source_venv}/bin/python" -m torch.distributed.run \
+          --nproc-per-node "${NUM_GPUS:-8}" \
+          "${RELAX_ROOT}/scripts/tools/convert_hf_to_torch_dist.py" \
+          "${MODEL_ARGS[@]}" \
           --hf-checkpoint "${MODEL_PATH}" \
-          --save "${shared_dcp}"; then
+          --save "${shared_dcp}" \
+          --megatron-to-hf-mode bridge \
+          --tensor-model-parallel-size "${ACTOR_TP:-8}" \
+          --pipeline-model-parallel-size 1 \
+          --context-parallel-size "${ACTOR_CP:-1}" \
+          --expert-model-parallel-size 1 \
+          --expert-tensor-parallel-size 1 \
+          --sequence-parallel \
+          --no-rope-fusion; then
         elapsed_s="$(( $(date +%s) - started_at ))"
         _code_x_record_cold_start_stage \
           "convert_hf_to_dcp" "${elapsed_s}" "${shared_dcp}"
