@@ -146,6 +146,75 @@ def test_grade_trajectory_bad_tool_penalty_and_escape():
     assert details["score"] == pytest.approx(-0.05)
 
 
+def test_private_container_tmp_and_workspace_are_not_escapes(tmp_path):
+    """The Slurm/Pyxis backend mounts both paths privately per trajectory."""
+    msgs = [
+        _assistant_answer(
+            tool_calls=[
+                _tool_call(
+                    "execute_commands",
+                    '{"keystrokes": "ffmpeg -i media/v.mp4 /tmp/frame.jpg && '
+                    'cp /tmp/frame.jpg /workspace/frame.jpg"}',
+                )
+            ]
+        )
+    ]
+    details = grade_trajectory(
+        msgs,
+        ["A"],
+        "mcq",
+        exit_reason="task_complete",
+        workspace=tmp_path,
+    )
+    assert details["n_escape"] == 0.0
+    assert details["correctness"] == 1.0
+
+
+def test_division_operator_in_heredoc_is_not_a_path_escape(tmp_path):
+    msgs = [
+        _assistant_answer(
+            tool_calls=[
+                _tool_call(
+                    "execute_commands",
+                    '{"keystrokes": "python - <<\'PY\'\\n'
+                    'print(1 / 2)\\nPY"}',
+                )
+            ]
+        )
+    ]
+    details = grade_trajectory(
+        msgs,
+        ["A"],
+        "mcq",
+        exit_reason="task_complete",
+        workspace=tmp_path,
+    )
+    assert details["n_escape"] == 0.0
+    assert details["correctness"] == 1.0
+
+
+def test_other_absolute_path_is_still_an_escape(tmp_path):
+    msgs = [
+        _assistant_answer(
+            tool_calls=[
+                _tool_call(
+                    "execute_commands",
+                    '{"keystrokes": "cat /etc/passwd"}',
+                )
+            ]
+        )
+    ]
+    details = grade_trajectory(
+        msgs,
+        ["A"],
+        "mcq",
+        exit_reason="task_complete",
+        workspace=tmp_path,
+    )
+    assert details["n_escape"] == 1.0
+    assert details["correctness"] == 0.0
+
+
 def test_modality_logic_is_configurable_via_env(monkeypatch):
     """Set env to a single tool; only that tool counts. Confirms env override
     fully replaces the default set (not merges with it)."""
@@ -175,6 +244,50 @@ def test_modality_logic_is_configurable_via_env(monkeypatch):
     )
     assert details["modality_match"] == 1.0
     assert details["correctness"] == 1.0
+
+
+def test_duplicate_audiovisual_path_is_one_modality_requirement(monkeypatch):
+    """AVUT stores one MP4 under both videos and audios."""
+    monkeypatch.setenv("RELAX_ROUTER_VIDEO_TOOLS", "image_read")
+    monkeypatch.setenv("RELAX_ROUTER_IMAGE_TOOLS", "image_read")
+    monkeypatch.setenv("RELAX_ROUTER_AUDIO_TOOLS", "whisper")
+    msgs = [_assistant_answer(tool_calls=[_tool_call("image_read")])]
+    details = grade_trajectory(
+        msgs,
+        ["A"],
+        "mcq",
+        exit_reason="task_complete",
+        media={
+            "videos": ["media/videos/shared.mp4"],
+            "audios": ["media/videos/shared.mp4"],
+            "images": [],
+        },
+    )
+    assert details["has_video"] == 1.0
+    assert details["has_audio"] == 0.0
+    assert details["modality_match"] == 1.0
+    assert details["correctness"] == 1.0
+
+
+def test_distinct_audio_asset_still_requires_audio_tool(monkeypatch):
+    monkeypatch.setenv("RELAX_ROUTER_VIDEO_TOOLS", "image_read")
+    monkeypatch.setenv("RELAX_ROUTER_IMAGE_TOOLS", "image_read")
+    monkeypatch.setenv("RELAX_ROUTER_AUDIO_TOOLS", "whisper")
+    msgs = [_assistant_answer(tool_calls=[_tool_call("image_read")])]
+    details = grade_trajectory(
+        msgs,
+        ["A"],
+        "mcq",
+        exit_reason="task_complete",
+        media={
+            "videos": ["media/videos/v.mp4"],
+            "audios": ["media/audios/a.wav"],
+            "images": [],
+        },
+    )
+    assert details["has_audio"] == 1.0
+    assert details["modality_match"] == 0.0
+    assert details["correctness"] == 0.0
 
 
 def test_timeout_without_answer_is_removed():
@@ -233,11 +346,22 @@ def test_reward_post_process_ignores_removed_samples():
     assert rewards == pytest.approx([1 / 3, 0.0, -2 / 3, 1 / 3])
 
 
-def test_active_dynamic_filter_ignores_removed_samples():
-    keep = check_active_reward_nonzero_std(_Args(), [_Sample(1.0), _Sample(0.0, remove_sample=True), _Sample(0.0)])
-    assert keep.keep
-    drop = check_active_reward_nonzero_std(_Args(), [_Sample(1.0), _Sample(0.0, remove_sample=True), _Sample(1.0)])
-    assert not drop.keep
+def test_active_dynamic_filter_resamples_groups_with_removed_samples():
+    result = check_active_reward_nonzero_std(
+        _Args(),
+        [_Sample(1.0), _Sample(0.0, remove_sample=True), _Sample(0.0)],
+    )
+    assert not result.keep
+    assert result.reason == "removed_1"
+
+
+def test_active_dynamic_filter_keeps_complete_nonzero_std_group():
+    result = check_active_reward_nonzero_std(
+        _Args(),
+        [_Sample(1.0), _Sample(0.0), _Sample(0.2), _Sample(1.0)],
+    )
+    assert result.keep
+    assert result.reason is None
 
 
 # ─── modality tool universe defaults ─────────────────────────────────────────

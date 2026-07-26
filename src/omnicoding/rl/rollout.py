@@ -24,6 +24,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import math
 import os
 import threading
 import time
@@ -178,6 +179,26 @@ def _build_payload(sample: "Sample", sampling_params: dict, args: Any) -> dict:
     }
 
 
+def _max_trajectory_tokens() -> int | None:
+    """Return the actor-side total-token ceiling for a Kira trajectory.
+
+    ``--rollout-max-response-len`` is a stock single-call rollout limit and is
+    not applied to Kira's multi-turn aggregate.  Keep this opt-in at the shared
+    rollout layer so recipes that have not sized their actor memory are
+    unchanged; the 9B Kira launcher exports a validated 48k default.
+    """
+    configured = os.environ.get("KIRA_MAX_TRAJECTORY_TOKENS", "").strip()
+    if not configured:
+        return None
+    try:
+        limit = int(configured)
+    except ValueError as exc:
+        raise ValueError("KIRA_MAX_TRAJECTORY_TOKENS must be a positive integer") from exc
+    if limit < 1:
+        raise ValueError("KIRA_MAX_TRAJECTORY_TOKENS must be a positive integer")
+    return limit
+
+
 # Each individual HTTP call is short — well under Cloudflare quick-tunnel's
 # 100s origin-timeout. The kira trajectory itself takes minutes; we discover
 # its result by polling a `job_id` returned from /rollout/submit.
@@ -287,9 +308,17 @@ def _failed_sample(sample: "Sample", reason: str) -> "Sample":
     from relax.utils.types import Sample as _Sample  # noqa: PLC0415
 
     sample.tokens = []
+    sample.rollout_tokens = []
     sample.loss_mask = []
     sample.response = ""
     sample.response_length = 0
+    sample.multimodal_inputs = None
+    sample.multimodal_train_inputs = None
+    # Relax's Megatron actor currently lists rollout_log_probs as a required
+    # TransferQueue field even when --use-rollout-logprobs is disabled.  The
+    # actor recomputes old-policy log-probs in that mode, so an empty field is
+    # only a readiness sentinel and is never used by the loss.
+    sample.rollout_log_probs = []
     sample.reward = {
         "score": 0.0,
         "correctness": 0.0,
@@ -310,6 +339,174 @@ def _failed_sample(sample: "Sample", reason: str) -> "Sample":
         "rollout_reward_components": sample.reward,
     }
     return sample
+
+
+# ─── exact rollout-policy scoring ────────────────────────────────────────────
+
+
+def _extract_rollout_log_probs(
+    output: dict[str, Any],
+    *,
+    tokens: list[int],
+    response_length: int,
+    loss_mask: list[int],
+    logprob_start_len: int,
+) -> list[float]:
+    """Validate and align SGLang prompt log-probs to Relax response space.
+
+    SGLang's ``input_token_logprobs`` starts with an undefined entry for the
+    first requested input position: the hidden state at that position predicts
+    the *next* token. We therefore request from ``response_start - 1``, discard
+    that first entry, and obtain exactly one old-policy log-prob per response
+    token.
+
+    Multimodal SGLang requests replace expanded image-pad ids with internal
+    hashed ids (and clip those ids in the response). Those positions are
+    observations and have ``loss_mask == 0``. Token-id equality is therefore
+    enforced on every trainable assistant position, which is the invariant
+    that matters to GSPO, while masked observation positions receive a harmless
+    zero log-prob.
+    """
+    if response_length <= 0:
+        return []
+    if len(loss_mask) != response_length:
+        raise ValueError(
+            f"loss-mask length {len(loss_mask)} != response length {response_length}"
+        )
+    prompt_length = len(tokens) - response_length
+    if prompt_length < 1:
+        raise ValueError(
+            "cannot score a response without at least one preceding prompt token"
+        )
+    if logprob_start_len != prompt_length - 1:
+        raise ValueError(
+            f"logprob_start_len {logprob_start_len} != response_start-1 "
+            f"({prompt_length - 1})"
+        )
+    if not isinstance(output, dict):
+        raise TypeError(f"SGLang score response must be a dict, got {type(output).__name__}")
+
+    meta = output.get("meta_info")
+    if not isinstance(meta, dict):
+        raise ValueError("SGLang score response is missing meta_info")
+    prompt_tokens = meta.get("prompt_tokens")
+    if int(prompt_tokens or -1) != len(tokens):
+        raise ValueError(
+            f"SGLang expanded prompt length {prompt_tokens} != actor token length "
+            f"{len(tokens)}"
+        )
+    raw = meta.get("input_token_logprobs")
+    if not isinstance(raw, list):
+        raise ValueError("SGLang score response is missing input_token_logprobs")
+
+    expected_raw_length = response_length + 1
+    if len(raw) != expected_raw_length:
+        raise ValueError(
+            f"SGLang returned {len(raw)} prompt log-probs, expected "
+            f"{expected_raw_length} (response_length + sentinel)"
+        )
+    if not isinstance(raw[0], (list, tuple)) or len(raw[0]) < 2:
+        raise ValueError("malformed SGLang prompt-logprob sentinel")
+    if raw[0][0] is not None:
+        raise ValueError(
+            "SGLang prompt-logprob sentinel is not None; response alignment "
+            "semantics changed"
+        )
+
+    response_tokens = tokens[prompt_length:]
+    aligned: list[float] = []
+    for offset, (item, expected_token, trainable) in enumerate(
+        zip(raw[1:], response_tokens, loss_mask, strict=True)
+    ):
+        if not isinstance(item, (list, tuple)) or len(item) < 2:
+            raise ValueError(f"malformed SGLang prompt log-prob at response offset {offset}")
+        value, returned_token = item[0], item[1]
+        if trainable:
+            if returned_token != expected_token:
+                raise ValueError(
+                    "SGLang/actor token mismatch at trainable response offset "
+                    f"{offset}: returned={returned_token}, expected={expected_token}"
+                )
+            if value is None or not math.isfinite(float(value)):
+                raise ValueError(
+                    f"non-finite SGLang log-prob at trainable response offset {offset}: {value}"
+                )
+            aligned.append(float(value))
+        else:
+            # Observation tokens are masked out of every advantage/loss
+            # reduction. Zero avoids propagating meaningless image-pad scores
+            # (or a None emitted for a processor-specific special token).
+            aligned.append(0.0)
+    return aligned
+
+
+async def _post_sglang_score(args: Any, payload: dict[str, Any]) -> dict[str, Any]:
+    """POST a native scoring request to the in-allocation SGLang router."""
+    from relax.utils.http_utils import post  # noqa: PLC0415
+
+    url = f"http://{args.sglang_router_ip}:{args.sglang_router_port}/generate"
+    return await post(url, payload)
+
+
+async def _encode_sglang_multimodal(multimodal_inputs: dict[str, Any]) -> dict[str, list]:
+    """Encode raw multimodal inputs using Relax's rollout wire format."""
+    from relax.engine.rollout.sglang_rollout import _encode_multimodal_inputs  # noqa: PLC0415
+
+    normalized = {
+        "images": list(multimodal_inputs.get("images") or []),
+        "videos": list(multimodal_inputs.get("videos") or []),
+        "audio": list(multimodal_inputs.get("audio") or []),
+    }
+    encoded, _elapsed = await _encode_multimodal_inputs(normalized)
+    return encoded
+
+
+async def _score_final_trajectory(
+    args: Any,
+    sample: "Sample",
+    *,
+    rollout_tokens: list[int],
+) -> list[float]:
+    """Score Kira's final canonical trajectory on the rollout policy.
+
+    Kira performs multiple OpenAI chat-completions calls. Tool/reasoning parsing
+    and the final chat-template render mean their individual wire log-probs
+    cannot safely be concatenated. A single SGLang prefill over the final
+    tokenizer view is exact, stays on the optimized inference engines, and lets
+    Megatron skip its otherwise redundant old-actor forward.
+    """
+    response_length = int(sample.response_length or 0)
+    if response_length <= 0:
+        return []
+    prompt_length = len(sample.tokens) - response_length
+    if prompt_length < 1:
+        raise ValueError(
+            f"invalid trajectory lengths: total={len(sample.tokens)}, "
+            f"response={response_length}"
+        )
+
+    logprob_start_len = prompt_length - 1
+    payload: dict[str, Any] = {
+        "input_ids": rollout_tokens,
+        "sampling_params": {
+            "temperature": 0,
+            "max_new_tokens": 0,
+            "skip_special_tokens": False,
+        },
+        "return_logprob": True,
+        "logprob_start_len": logprob_start_len,
+    }
+    if sample.multimodal_inputs:
+        payload.update(await _encode_sglang_multimodal(sample.multimodal_inputs))
+
+    output = await _post_sglang_score(args, payload)
+    return _extract_rollout_log_probs(
+        output,
+        tokens=sample.tokens,
+        response_length=response_length,
+        loss_mask=sample.loss_mask,
+        logprob_start_len=logprob_start_len,
+    )
 
 
 # ─── public entry point ──────────────────────────────────────────────────────
@@ -371,19 +568,41 @@ async def generate(
     # tokens AND the pixel_values + image_grid_thw the trainer needs.
     multimodal_inputs = None
     multimodal_train_inputs = None
+    rollout_tokens: list[int]
     if state.processor is not None:
-        tokens, loss_mask, response_length, multimodal_inputs, multimodal_train_inputs = (
+        (
+            tokens,
+            loss_mask,
+            response_length,
+            multimodal_inputs,
+            multimodal_train_inputs,
+            rollout_tokens,
+        ) = (
             tokenize_trajectory_multimodal(
                 traj["messages"], state.tokenizer, state.processor,
                 apply_chat_template_kwargs=apply_kwargs,
+                return_rollout_tokens=True,
             )
         )
     else:
         tokens, loss_mask, response_length = tokenize_trajectory(
             traj["messages"], state.tokenizer, apply_chat_template_kwargs=apply_kwargs,
         )
+        rollout_tokens = tokens
+
+    max_trajectory_tokens = _max_trajectory_tokens()
+    if max_trajectory_tokens is not None and len(tokens) > max_trajectory_tokens:
+        LOG.warning(
+            "remove overlong rollout task=%s tokens=%d limit=%d steps=%s",
+            payload["task_id"], len(tokens), max_trajectory_tokens, traj.get("n_steps"),
+        )
+        return _failed_sample(
+            sample,
+            f"trajectory token limit exceeded: {len(tokens)} > {max_trajectory_tokens}",
+        )
 
     sample.tokens = tokens
+    sample.rollout_tokens = rollout_tokens
     sample.loss_mask = loss_mask
     sample.response = traj.get("final_text") or ""
     sample.response_length = response_length
@@ -391,6 +610,41 @@ async def generate(
         sample.multimodal_inputs = multimodal_inputs
     if multimodal_train_inputs is not None:
         sample.multimodal_train_inputs = multimodal_train_inputs
+
+    score_elapsed_s = 0.0
+    score_source = "disabled"
+    if evaluation:
+        sample.rollout_log_probs = []
+        score_source = "evaluation_skipped"
+    elif not getattr(args, "use_rollout_logprobs", False):
+        # Compatibility mode for old recipes/replay data. The Megatron actor
+        # will recompute these before training.
+        sample.rollout_log_probs = []
+    elif bool(traj.get("removed")):
+        # Relax zeros the loss mask for removed samples. Preserve the required
+        # response-space shape without spending a long prefill on unusable data.
+        sample.rollout_log_probs = [0.0] * response_length
+        score_source = "removed_sample_zeros"
+    else:
+        score_started = time.monotonic()
+        try:
+            sample.rollout_log_probs = await _score_final_trajectory(
+                args, sample, rollout_tokens=rollout_tokens,
+            )
+        except Exception as exc:  # noqa: BLE001
+            LOG.exception(
+                "rollout-policy scoring failed task=%s total_tokens=%d response_tokens=%d",
+                payload["task_id"], len(tokens), response_length,
+            )
+            return _failed_sample(sample, f"rollout log-prob scoring: {exc}")
+        score_elapsed_s = time.monotonic() - score_started
+        score_source = "sglang_final_trajectory"
+        if len(sample.rollout_log_probs) != response_length:
+            return _failed_sample(
+                sample,
+                "rollout log-prob scoring returned "
+                f"{len(sample.rollout_log_probs)} values for response_length={response_length}",
+            )
     reward_details = traj.get("reward_details") or {
         "score": float(traj.get("reward") or 0.0),
         "correctness": float(traj.get("outcome_reward") or 0.0),
@@ -423,13 +677,16 @@ async def generate(
         "rollout_reward_components": reward_details,
         "rollout_remove_sample": bool(traj.get("removed")),
         "rollout_router_error": traj.get("error"),
+        "rollout_logprob_source": score_source,
+        "rollout_logprob_score_s": score_elapsed_s,
     }
 
     LOG.info(
-        "rollout done task=%s reward=%.2f (out=%.1f fmt=%.1f) tokens=%d resp_len=%d steps=%s exit=%s",
+        "rollout done task=%s reward=%.2f (out=%.1f fmt=%.1f) tokens=%d "
+        "resp_len=%d logprob_source=%s logprob_score_s=%.1f steps=%s exit=%s",
         payload["task_id"], reward_details["score"],
         float(traj.get("outcome_reward") or 0.0), float(traj.get("format_reward") or 0.0),
-        len(tokens), response_length,
+        len(tokens), response_length, score_source, score_elapsed_s,
         traj.get("n_steps"), traj.get("exit_reason"),
     )
     return sample

@@ -41,6 +41,16 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--request", required=True, type=Path)
     ap.add_argument("--result", required=True, type=Path)
+    ap.add_argument(
+        "--workspace",
+        type=Path,
+        default=None,
+        help=(
+            "Override the workspace stored in the request. The Slurm/Pyxis "
+            "backend uses /workspace so the host scratch path is never "
+            "visible inside the rollout container."
+        ),
+    )
     args = ap.parse_args(argv)
 
     logging.basicConfig(
@@ -59,7 +69,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         record = _build_record(payload["record"])
         req = RolloutRequest.model_validate(payload["request"])
-        workspace = Path(payload["workspace"])
+        workspace = args.workspace or Path(payload["workspace"])
         staged_media = [str(value) for value in payload.get("staged_media", [])]
         workspace.mkdir(parents=True, exist_ok=True)
     except Exception as exc:  # noqa: BLE001

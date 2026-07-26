@@ -525,7 +525,12 @@ def tokenize_trajectory_multimodal(
     tokenizer,
     processor,
     apply_chat_template_kwargs: dict | None = None,
-) -> tuple[list[int], list[int], int, dict | None, dict | None]:
+    *,
+    return_rollout_tokens: bool = False,
+) -> (
+    tuple[list[int], list[int], int, dict | None, dict | None]
+    | tuple[list[int], list[int], int, dict | None, dict | None, list[int]]
+):
     """Multimodal (Qwen3-VL) trajectory tokenizer.
 
     Steps:
@@ -559,7 +564,8 @@ def tokenize_trajectory_multimodal(
           forward-passes these through the vision tower.
     """
     if not messages:
-        return [], [], 0, None, None
+        empty_result = ([], [], 0, None, None)
+        return (*empty_result, []) if return_rollout_tokens else empty_result
 
     apply_kwargs = apply_chat_template_kwargs or {}
     rewritten, pil_images = _kira_to_relax_messages(messages)
@@ -568,6 +574,13 @@ def tokenize_trajectory_multimodal(
     text = processor.apply_chat_template(
         rewritten, tokenize=False, add_generation_prompt=False, **apply_kwargs,
     )
+    # SGLang must receive the unexpanded tokenizer-side ids together with the
+    # raw image data. Its multimodal processor expands image placeholders
+    # internally. The Megatron actor, in contrast, consumes the processor-
+    # expanded ids below. Keep both views so rollout-side prompt scoring can
+    # return log-probs aligned to the exact actor sequence without feeding
+    # already-expanded image pads back through SGLang a second time.
+    rollout_tokens = tokenizer.encode(text, add_special_tokens=False)
 
     # Step 3: processor expands <|image_pad|> based on each image's grid_thw
     proc_kwargs: dict[str, Any] = {
@@ -608,8 +621,16 @@ def tokenize_trajectory_multimodal(
     first_asst_pos = _find_first_assistant_pos(input_ids, specials)
     if first_asst_pos is None:
         # No assistant in trajectory → all prompt, no response.
-        return input_ids, [], 0, multimodal_inputs, multimodal_train_inputs
+        result = (input_ids, [], 0, multimodal_inputs, multimodal_train_inputs)
+        return (*result, rollout_tokens) if return_rollout_tokens else result
 
     response_length = len(input_ids) - first_asst_pos
     loss_mask = full_mask[first_asst_pos:]
-    return input_ids, loss_mask, response_length, multimodal_inputs, multimodal_train_inputs
+    result = (
+        input_ids,
+        loss_mask,
+        response_length,
+        multimodal_inputs,
+        multimodal_train_inputs,
+    )
+    return (*result, rollout_tokens) if return_rollout_tokens else result

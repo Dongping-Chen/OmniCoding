@@ -68,6 +68,15 @@ def main() -> int:
     ap.add_argument("--input", default=os.environ.get("RL_TRAIN_JSONL"))
     ap.add_argument("--output", default=os.environ.get("RL_PROMPT_PARQUET"))
     ap.add_argument("--max-records", type=int, default=None, help="Smoke-test cap.")
+    ap.add_argument(
+        "--answer-type",
+        choices=("mcq", "open"),
+        default=None,
+        help=(
+            "Optionally keep one verifier class; use mcq for deterministic "
+            "judge-free smoke tests."
+        ),
+    )
     args = ap.parse_args()
 
     if not args.input:
@@ -92,6 +101,8 @@ def main() -> int:
             except json.JSONDecodeError as exc:
                 LOG.error("%s:%d invalid JSON: %s", in_path, ln, exc)
                 return 1
+            if args.answer_type and src.get("answer_type") != args.answer_type:
+                continue
             rows.append(_row_to_record(src))
             if args.max_records and len(rows) >= args.max_records:
                 break

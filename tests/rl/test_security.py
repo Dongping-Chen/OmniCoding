@@ -9,6 +9,7 @@ from fastapi.security import HTTPAuthorizationCredentials
 from pydantic import ValidationError
 
 from omnicoding.rl.coordinator.dataset import Record
+from omnicoding.rl.coordinator.instruction import KiraPrompt
 from omnicoding.rl.coordinator.media import stage_media
 from omnicoding.rl.coordinator.dispatcher import SlurmDispatcher
 from omnicoding.rl.coordinator.worker import _build_agent
@@ -54,7 +55,16 @@ def test_rollout_request_has_resource_bounds() -> None:
 
 def test_rollout_sampling_limit_reaches_kira_agent(tmp_path: Path) -> None:
     request = _request(sampling_params={"max_tokens": 4096})
-    agent = _build_agent(tmp_path / "workspace", request)
+    agent = _build_agent(
+        tmp_path / "workspace",
+        request,
+        prompt=KiraPrompt(
+            system_prefix="system",
+            user_question="question",
+            continue_prompt="continue",
+        ),
+        extra_env={},
+    )
 
     assert agent.max_tokens == 4096
 
@@ -140,11 +150,39 @@ def test_media_is_copied_without_exposing_dataset_root(tmp_path: Path) -> None:
     workspace.mkdir()
 
     staged = stage_media(_record("media/videos/clip.mp4"), workspace, dataset_root)
-    destination = workspace / "media" / "videos" / "clip.mp4"
+    destination = workspace / "inputs" / "videos" / "clip.mp4"
 
-    assert staged == ["media/videos/clip.mp4"]
+    assert staged == ["inputs/videos/clip.mp4"]
     assert destination.read_bytes() == b"fixture"
     assert not destination.is_symlink()
+
+
+def test_audio_video_source_is_staged_only_once(tmp_path: Path) -> None:
+    dataset_root = tmp_path / "dataset"
+    workspace = tmp_path / "workspace"
+    source = dataset_root / "media" / "videos" / "clip.mp4"
+    source.parent.mkdir(parents=True)
+    source.write_bytes(b"fixture")
+    workspace.mkdir()
+    base = _record("media/videos/clip.mp4")
+    record = Record(
+        id=base.id,
+        question=base.question,
+        answer_type=base.answer_type,
+        ground_truth=base.ground_truth,
+        options=base.options,
+        media={
+            "videos": ["media/videos/clip.mp4"],
+            "audios": ["media/videos/clip.mp4"],
+            "images": [],
+        },
+        source_dataset="AVUTBenchmark",
+        category=base.category,
+    )
+
+    staged = stage_media(record, workspace, dataset_root)
+
+    assert staged == ["inputs/videos/clip.mp4"]
 
 
 def test_slurm_export_does_not_inherit_coordinator_secrets(

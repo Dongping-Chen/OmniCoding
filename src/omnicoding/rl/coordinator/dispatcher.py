@@ -88,6 +88,9 @@ class SlurmDispatcher:
         coalesce_window_s:   max time to wait for a partial batch to fill
                              (default 0.5s — 128 incoming requests typically
                              arrive within ~50ms so this rarely fires)
+        dispatch_concurrency:
+                             max media-staging + sbatch operations allowed to
+                             overlap outside the event loop (default 8)
     """
 
     def __init__(
@@ -97,12 +100,14 @@ class SlurmDispatcher:
         tasks_per_job: int = 2,
         poll_interval_s: float = 15.0,
         coalesce_window_s: float = 0.5,
+        dispatch_concurrency: int = 8,
     ):
         self.scratch_root = scratch_root
         self.sbatch_script = sbatch_script
         self.tasks_per_job = max(1, tasks_per_job)
         self.poll_interval_s = poll_interval_s
         self.coalesce_window_s = max(0.0, coalesce_window_s)
+        self.dispatch_concurrency = max(1, dispatch_concurrency)
         scratch_root.mkdir(parents=True, exist_ok=True)
         if not sbatch_script.is_file():
             raise FileNotFoundError(f"sbatch script not found: {sbatch_script}")
@@ -111,6 +116,7 @@ class SlurmDispatcher:
         self._pending: list[_PendingRequest] = []
         self._pending_cond: asyncio.Condition | None = None
         self._coalescer_task: asyncio.Task | None = None
+        self._dispatch_sem: asyncio.Semaphore | None = None
 
     # ─── lifecycle ─────────────────────────────────────────────────────
 
@@ -120,11 +126,17 @@ class SlurmDispatcher:
         if self._coalescer_task is not None:
             return
         self._pending_cond = asyncio.Condition()
+        self._dispatch_sem = asyncio.Semaphore(self.dispatch_concurrency)
         self._coalescer_task = asyncio.create_task(
             self._coalescer_loop(), name="dispatcher-coalescer",
         )
-        LOG.info("dispatcher coalescer started: tasks_per_job=%d, window=%.2fs",
-                 self.tasks_per_job, self.coalesce_window_s)
+        LOG.info(
+            "dispatcher coalescer started: tasks_per_job=%d, window=%.2fs, "
+            "dispatch_concurrency=%d",
+            self.tasks_per_job,
+            self.coalesce_window_s,
+            self.dispatch_concurrency,
+        )
 
     async def stop(self) -> None:
         """Cancel the coalescer + fail-resolve any pending futures."""
@@ -241,47 +253,52 @@ class SlurmDispatcher:
         futures with their respective Trajectory."""
         from .worker import _failed_trajectory  # noqa: PLC0415
 
-        # Per-request: (PendingRequest, req_path, res_path, job_uuid, workspace)
-        files: list[tuple[_PendingRequest, Path, Path, str, Path]] = []
-        for p in batch:
-            job_uuid = uuid.uuid4().hex[:12]
-            job_dir = self.scratch_root / job_uuid
-            job_dir.mkdir(parents=True, exist_ok=True)
-            req_path = job_dir / "req_0.json"
-            res_path = job_dir / "res_0.json"
-            # Workspace under scratch/jobs/{uuid}/work/0/ (NFS, ~1.6 TB free)
-            # rather than a small per-node /tmp shared with other jobs. Shared
-            # storage is slower for small-file IO but avoids node-local
-            # capacity failures during long media trajectories.
-            workspace = job_dir / "work" / "0"
-            try:
-                payload = self._worker_payload(
-                    job_id=job_uuid,
-                    sample_index=0,
-                    record=p.record,
-                    request=p.req,
-                    dataset_root=p.dataset_root,
-                    workspace=workspace,
-                )
-                req_path.write_text(json.dumps(payload))
-            except Exception as exc:  # noqa: BLE001
-                LOG.exception("coalescer: task staging failed for %s", p.req.task_id)
-                if not p.future.done():
-                    p.future.set_result([
-                        _failed_trajectory(0, "error", f"task staging failed: {exc}")
-                    ])
-                self._mark_completed(job_dir)
-                continue
-            files.append((p, req_path, res_path, job_uuid, workspace))
+        assert self._dispatch_sem is not None
+        # Media copies and Slurm CLI calls are blocking filesystem/subprocess
+        # operations. Running them directly in this async task serialized every
+        # coalesced batch on FastAPI's event loop until the first polling sleep.
+        # Bound the number of concurrently prepared/submitted batches so large
+        # rollout fan-outs overlap without overwhelming shared storage.
+        async with self._dispatch_sem:
+            staged = await asyncio.gather(
+                *(asyncio.to_thread(self._stage_coalesced_request, p) for p in batch)
+            )
 
-        if not files:
-            return
+            # Per-request:
+            # (PendingRequest, req_path, res_path, job_uuid, workspace)
+            files: list[tuple[_PendingRequest, Path, Path, str, Path]] = []
+            for p, prepared, error in staged:
+                if error is not None:
+                    LOG.error(
+                        "coalescer: task staging failed for %s: %s",
+                        p.req.task_id,
+                        error,
+                    )
+                    if not p.future.done():
+                        p.future.set_result([
+                            _failed_trajectory(0, "error", f"task staging failed: {error}")
+                        ])
+                    if prepared is not None:
+                        self._mark_completed(prepared[0].parent)
+                    continue
+                assert prepared is not None
+                req_path, res_path, job_uuid, workspace = prepared
+                files.append((p, req_path, res_path, job_uuid, workspace))
 
-        all_req_paths = [r for _, r, _, _, _ in files]
-        all_res_paths = [r for _, _, r, _, _ in files]
-        # sbatch logs go to first request's job_dir (informational only)
-        log_dir = files[0][1].parent
-        jid = self._sbatch(all_req_paths, all_res_paths, log_dir, chunk_idx=0)
+            if not files:
+                return
+
+            all_req_paths = [r for _, r, _, _, _ in files]
+            all_res_paths = [r for _, _, r, _, _ in files]
+            # sbatch logs go to first request's job_dir (informational only)
+            log_dir = files[0][1].parent
+            jid = await asyncio.to_thread(
+                self._sbatch,
+                all_req_paths,
+                all_res_paths,
+                log_dir,
+                0,
+            )
 
         if jid is None:
             LOG.error("coalescer: sbatch FAILED for batch of %d trajectories",
@@ -313,9 +330,14 @@ class SlurmDispatcher:
             if all(p.future.done() for p, _, _, _, _ in files):
                 LOG.info("coalescer: jid=%d — all callers gave up; scancelling",
                          jid)
-                subprocess.run(["scancel", str(jid)], check=False, timeout=10)
+                await asyncio.to_thread(
+                    subprocess.run,
+                    ["scancel", str(jid)],
+                    check=False,
+                    timeout=10,
+                )
                 return
-            running = self._squeue_running([jid])
+            running = await asyncio.to_thread(self._squeue_running, [jid])
             if jid in running:
                 continue
             # Job finished — read results, resolve futures
@@ -338,12 +360,52 @@ class SlurmDispatcher:
         # Deadline blew through
         LOG.warning("coalescer: jid=%d exceeded %.0fs deadline; scancelling",
                     jid, max_deadline)
-        subprocess.run(["scancel", str(jid)], check=False, timeout=10)
+        await asyncio.to_thread(
+            subprocess.run,
+            ["scancel", str(jid)],
+            check=False,
+            timeout=10,
+        )
         for p, _, _, _, _ in files:
             if not p.future.done():
                 p.future.set_result(
                     [_failed_trajectory(0, "timeout", f"sbatch jid={jid} deadline")]
                 )
+
+    def _stage_coalesced_request(
+        self,
+        pending: _PendingRequest,
+    ) -> tuple[
+        _PendingRequest,
+        tuple[Path, Path, str, Path] | None,
+        Exception | None,
+    ]:
+        """Stage one request in a worker thread.
+
+        Returns errors as values so only the event-loop thread resolves the
+        caller's future.
+        """
+        job_uuid = uuid.uuid4().hex[:12]
+        job_dir = self.scratch_root / job_uuid
+        req_path = job_dir / "req_0.json"
+        res_path = job_dir / "res_0.json"
+        # Shared storage avoids node-local capacity failures during long media
+        # trajectories. Each request remains isolated in its own workspace.
+        workspace = job_dir / "work" / "0"
+        try:
+            job_dir.mkdir(parents=True, exist_ok=True)
+            payload = self._worker_payload(
+                job_id=job_uuid,
+                sample_index=0,
+                record=pending.record,
+                request=pending.req,
+                dataset_root=pending.dataset_root,
+                workspace=workspace,
+            )
+            req_path.write_text(json.dumps(payload))
+        except Exception as exc:  # noqa: BLE001
+            return pending, (req_path, res_path, job_uuid, workspace), exc
+        return pending, (req_path, res_path, job_uuid, workspace), None
 
     # ─── immediate path (n_samples > 1, no coalescing) ─────────────────
 
@@ -381,7 +443,8 @@ class SlurmDispatcher:
                 res_path = job_dir / f"res_{sample_idx}.json"
                 workspace = job_dir / "work" / str(sample_idx)
                 try:
-                    payload = self._worker_payload(
+                    payload = await asyncio.to_thread(
+                        self._worker_payload,
                         job_id=job_uuid,
                         sample_index=sample_idx,
                         record=record,
@@ -402,7 +465,13 @@ class SlurmDispatcher:
                 staged_indices.append(sample_idx)
             if not req_paths:
                 continue
-            jid = self._sbatch(req_paths, res_paths, job_dir, chunk_idx)
+            jid = await asyncio.to_thread(
+                self._sbatch,
+                req_paths,
+                res_paths,
+                job_dir,
+                chunk_idx,
+            )
             jobs.append((jid, staged_indices, res_paths, workspaces))
             if jid is None:
                 LOG.error("immediate: sbatch FAILED for chunk %d (samples %s)",
@@ -429,7 +498,10 @@ class SlurmDispatcher:
 
         while pending_jids and time.monotonic() < end_at:
             await asyncio.sleep(self.poll_interval_s)
-            running = self._squeue_running(list(pending_jids))
+            running = await asyncio.to_thread(
+                self._squeue_running,
+                list(pending_jids),
+            )
             for jid in list(pending_jids):
                 if jid in running:
                     continue
@@ -454,7 +526,12 @@ class SlurmDispatcher:
             LOG.warning("immediate: %d jids still running at deadline; scancelling",
                         len(pending_jids))
             for jid in pending_jids:
-                subprocess.run(["scancel", str(jid)], check=False, timeout=10)
+                await asyncio.to_thread(
+                    subprocess.run,
+                    ["scancel", str(jid)],
+                    check=False,
+                    timeout=10,
+                )
                 indices, _, _ = jid_to_chunk[jid]
                 for sample_idx in indices:
                     if sample_idx not in results:

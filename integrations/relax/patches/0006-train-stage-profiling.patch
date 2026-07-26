@@ -1,0 +1,90 @@
+diff --git a/relax/backends/megatron/model.py b/relax/backends/megatron/model.py
+index 8d745d9..2cf622e 100644
+--- a/relax/backends/megatron/model.py
++++ b/relax/backends/megatron/model.py
+@@ -4,6 +4,7 @@ import dataclasses
+ import gc
+ import math
+ import os
++import time
+ import uuid
+ from argparse import Namespace
+ from collections.abc import Callable, Sequence
+@@ -38,6 +39,29 @@ from .model_provider import get_model_provider_func, wrap_model_provider_with_fr
+ logger = get_logger(__name__)
+ 
+ 
++def _profile_train_stages_enabled() -> bool:
++    return os.environ.get("RELAX_PROFILE_TRAIN_STAGES", "0").strip().lower() in {"1", "true", "yes", "on"}
++
++
++def _synchronized_stage_time() -> float:
++    """Return a wall-clock timestamp after completing queued CUDA work."""
++    if torch.cuda.is_available():
++        torch.cuda.synchronize()
++    return time.perf_counter()
++
++
++def _log_train_stage(rollout_id: int, step_id: int, stage: str, start_time: float) -> None:
++    elapsed = _synchronized_stage_time() - start_time
++    if not torch.distributed.is_initialized() or torch.distributed.get_rank() == 0:
++        logger.info(
++            "RELAX_TRAIN_STAGE rollout_id=%d step_id=%d stage=%s elapsed_s=%.6f",
++            rollout_id,
++            step_id,
++            stage,
++            elapsed,
++        )
++
++
+ def get_optimizer_param_scheduler(args: Namespace, optimizer: MegatronOptimizer) -> OptimizerParamScheduler:
+     """Create and configure the optimizer learning-rate/weight-decay scheduler.
+ 
+@@ -450,8 +474,12 @@ def train_one_step(
+ 
+         return output_tensor, partial(loss_function, args, batch, num_microbatches)
+ 
+-    # Forward pass.
++    profile_train_stages = _profile_train_stages_enabled()
++
++    # Forward and backward pass.
+     forward_backward_func = get_forward_backward_func()
++    if profile_train_stages:
++        forward_backward_start = _synchronized_stage_time()
+     losses_reduced = forward_backward_func(
+         forward_step_func=forward_step,
+         data_iterator=data_iterator,
+@@ -462,6 +490,8 @@ def train_one_step(
+         decoder_seq_length=args.decoder_seq_length,
+         forward_only=False,
+     )
++    if profile_train_stages:
++        _log_train_stage(rollout_id, step_id, "forward_backward", forward_backward_start)
+ 
+     valid_step = True
+     # NOTE(jiajia): FP16 precision does not perform NaN validation on loss and gradients, as this validation process would result in duplicate gradient scaling (grad scale).
+@@ -485,16 +515,24 @@ def train_one_step(
+ 
+     if valid_step:
+         # Update parameters.
++        if profile_train_stages:
++            optimizer_start = _synchronized_stage_time()
+         update_successful, grad_norm, num_zeros_in_grad = optimizer.step()
+ 
+         # Update learning rate.
+         assert update_successful
+         opt_param_scheduler.step(increment=args.global_batch_size)
++        if profile_train_stages:
++            _log_train_stage(rollout_id, step_id, "optimizer", optimizer_start)
+ 
+     # release grad
++    if profile_train_stages:
++        clear_grad_start = _synchronized_stage_time()
+     for model_chunk in model:
+         model_chunk.zero_grad_buffer()
+     optimizer.zero_grad()
++    if profile_train_stages:
++        _log_train_stage(rollout_id, step_id, "clear_grad", clear_grad_start)
+ 
+     if mpu.is_pipeline_last_stage(ignore_virtual=True):
+         # Average loss across microbatches.

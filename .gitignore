@@ -13,6 +13,7 @@ dist/
 # Local environments and credentials
 .venv/
 .venv_*/
+.venv-harness/
 .env
 .env.*
 **/.env
@@ -21,6 +22,7 @@ dist/
 auth.json
 **/auth.json
 tavily_keys.txt
+tavily.txt
 yt_cookies.txt
 cloudflared.yml
 tunnel_url.txt
@@ -31,6 +33,7 @@ tunnel_url.txt
 /media/
 /models/
 /outputs/
+/runtime/
 /artifacts/
 /checkpoints/
 /logs/

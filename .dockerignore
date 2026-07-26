@@ -1,0 +1,15 @@
+.git
+.venv
+.venv-*
+.venv_*
+data
+models
+outputs
+runtime
+scratch
+wandb
+*.parquet
+*.safetensors
+*.pt
+*.sqsh
+tavily.txt

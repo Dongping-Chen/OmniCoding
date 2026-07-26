@@ -1,0 +1,68 @@
+diff --git a/relax/backends/sglang/sglang_engine.py b/relax/backends/sglang/sglang_engine.py
+index 5bc0f40..d5a5018 100644
+--- a/relax/backends/sglang/sglang_engine.py
++++ b/relax/backends/sglang/sglang_engine.py
+@@ -77,35 +77,47 @@ def _patched_run_scheduler_process(*args, **kwargs):
+     return run_scheduler_process(*args, **kwargs)
+ 
+ 
+-def _launch_server_with_patch(server_args: ServerArgs):
+-    """Top-level picklable target for ``multiprocessing.Process`` when the
+-    async D→H optimisation is enabled.
+-
+-    Passes ``_patched_run_scheduler_process`` into ``launch_server`` so that
+-    every scheduler subprocess applies the monkey-patch.
++def _launch_server_on_assigned_gpu(server_args: ServerArgs, optimize_routing_replay: bool):
++    """Launch an SGLang HTTP server on its assigned local CUDA device.
++
++    Colocated TP1 engines intentionally see every GPU so their scheduler
++    subprocesses can honor ``base_gpu_id``. The HTTP/tokenizer parent process
++    does not consume that argument itself, however, and otherwise defaults all
++    of its CUDA allocations to device 0. With one engine per GPU this leaves
++    several GiB from every tokenizer process on GPU 0 when actor training
++    resumes. Explicitly selecting ``base_gpu_id`` in the spawned parent keeps
++    those allocations distributed with their corresponding schedulers.
++
++    This function is a top-level target because multiprocessing uses ``spawn``.
+     """
++    import torch
++
+     from sglang.srt.entrypoints.http_server import launch_server
+ 
+-    launch_server(
+-        server_args,
+-        run_scheduler_process_func=_patched_run_scheduler_process,
+-    )
++    if torch.cuda.is_available():
++        torch.cuda.set_device(int(server_args.base_gpu_id))
++
++    if optimize_routing_replay:
++        launch_server(
++            server_args,
++            run_scheduler_process_func=_patched_run_scheduler_process,
++        )
++    else:
++        launch_server(server_args)
+ 
+ 
+ def launch_server_process(server_args: ServerArgs) -> multiprocessing.Process:
+-    from sglang.srt.entrypoints.http_server import launch_server
+-
+     multiprocessing.set_start_method("spawn", force=True)
+     server_args.host = server_args.host.strip("[]")
+ 
+     optimize = os.environ.get("RELAX_OPTIMIZE_ROUTING_REPLAY", "0") == "1"
+     if optimize:
+         logger.info("Launching SGLang server with async D→H routing-replay patch")
+-        target_func = _launch_server_with_patch
+-    else:
+-        target_func = launch_server
+ 
+-    p = multiprocessing.Process(target=target_func, args=(server_args,))
++    p = multiprocessing.Process(
++        target=_launch_server_on_assigned_gpu,
++        args=(server_args, optimize),
++    )
+     p.start()
+ 
+     if server_args.node_rank != 0:

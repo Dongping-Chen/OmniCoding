@@ -1,0 +1,17 @@
+diff --git a/relax/utils/utils.py b/relax/utils/utils.py
+--- a/relax/utils/utils.py
++++ b/relax/utils/utils.py
+@@ -269,6 +269,13 @@ def post_process_env(args, env):
+     env["env_vars"]["TQ_ZERO_COPY_SERIALIZATION"] = "true"
+     env["env_vars"]["SLIME_HOST_IP"] = _resolve_to_ip(os.getenv("MASTER_ADDR", "127.0.0.1"))
+ 
++    # Cluster interface names are deployment-specific. Let launchers override
++    # the image defaults (commonly eth0/bond0) without editing this shared
++    # config file in place.
++    for name in ("GLOO_SOCKET_IFNAME", "NCCL_SOCKET_IFNAME", "TP_SOCKET_IFNAME"):
++        if value := os.getenv(name):
++            env["env_vars"][name] = value
++
+     if os.getenv("RAY_DEBUG", "0") == "1":
+         env["env_vars"]["RAY_DEBUG_POST_MORTEM"] = "1"
+         env["env_vars"]["RAY_DEBUG"] = "1"

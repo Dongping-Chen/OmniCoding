@@ -166,6 +166,46 @@ def test_one_image_read_populates_multimodal(processor, tokenizer):
         assert response_tokens[-1] in nl_id or response_tokens[-1] == nl_id[0]
 
 
+def test_rollout_token_view_keeps_one_unexpanded_image_placeholder(processor, tokenizer):
+    """SGLang gets raw placeholders + image_data; actor gets expanded pads."""
+    fn = _import_fn()
+    msgs = [
+        {"role": "system", "content": "agent"},
+        {"role": "user", "content": "look"},
+        {
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [
+                {
+                    "id": "c0",
+                    "type": "function",
+                    "function": {
+                        "name": "image_read",
+                        "arguments": '{"file_path":"x.jpg"}',
+                    },
+                }
+            ],
+        },
+        {"role": "tool", "tool_call_id": "c0", "content": "Loaded x.jpg."},
+        _kira_image_message(),
+        {"role": "assistant", "content": "<answer>done</answer>"},
+    ]
+
+    tokens, mask, resp_len, mm_in, mm_train, rollout_tokens = fn(
+        msgs,
+        tokenizer,
+        processor,
+        return_rollout_tokens=True,
+    )
+
+    image_pad_id = tokenizer.convert_tokens_to_ids("<|image_pad|>")
+    assert rollout_tokens.count(image_pad_id) == 1
+    assert tokens.count(image_pad_id) > rollout_tokens.count(image_pad_id)
+    assert len(tokens) > len(rollout_tokens)
+    assert len(mask) == resp_len
+    assert mm_in is not None and mm_train is not None
+
+
 def test_two_image_reads_in_one_trajectory(processor, tokenizer):
     """Two sequential image_read calls — both images appear in pixel_values
     along the leading batch dim."""

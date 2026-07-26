@@ -269,14 +269,28 @@ def _path_escapes(value: str, workspace: Path | None) -> bool:
     if workspace is None:
         return False
     ws = workspace.resolve()
+    # Pyxis gives every trajectory private rw mounts at /workspace and /tmp.
+    # They are part of the sandbox boundary, even though the coordinator grades
+    # against the corresponding host-side workspace path.  Kira/SFT
+    # trajectories commonly put extracted frames in /tmp, so treating that
+    # mount as an escape incorrectly zeroes otherwise-valid reward.
+    sandbox_roots = (Path("/workspace"), Path("/tmp"))
     for token in _string_tokens(value):
+        # A standalone slash is commonly the Python/shell division operator in
+        # heredocs (``n / len(xs)``), not a filesystem reference.
+        if token == "/":
+            continue
         if not token.startswith("/"):
             continue
         try:
             resolved = Path(token).resolve()
         except OSError:
             return True
-        if not str(resolved).startswith(str(ws)):
+        allowed_roots = (ws, *sandbox_roots)
+        if not any(
+            resolved == root or resolved.is_relative_to(root)
+            for root in allowed_roots
+        ):
             return True
     return False
 
@@ -342,8 +356,15 @@ def summarize_tool_calls(
 
 def check_modality(media: dict[str, list[str]] | None, names_used: list[str] | set[str]) -> tuple[bool, bool, bool]:
     media = media or {}
-    has_video = bool(media.get("videos"))
-    has_audio = bool(media.get("audios"))
+    video_paths = set(media.get("videos") or [])
+    audio_paths = set(media.get("audios") or [])
+    has_video = bool(video_paths)
+    # AVUT records the same audiovisual MP4 under both keys.  Requiring a
+    # separate ASR call for that duplicate makes visually solved questions
+    # false negatives and differs from Video-MME/OmniVideoBench, where an MP4
+    # with an audio track appears only under ``videos``.  Only a distinct
+    # staged audio asset creates an additional audio-consumption requirement.
+    has_audio = bool(audio_paths - video_paths)
     names = set(names_used)
     used_video = bool(names & (_video_tools() | _image_tools()))
     used_audio = bool(names & _audio_tools())
@@ -535,10 +556,17 @@ def check_active_reward_nonzero_std(args: Any, samples: list[Any], **kwargs: Any
             reason: str | None = None
 
     del kwargs
+    removed_count = sum(bool(getattr(sample, "remove_sample", False)) for sample in samples)
+    if removed_count:
+        # Removed trajectories have an empty/dummy training payload. Keeping a
+        # partially active GSPO group would preserve reward math, but it can
+        # also pass a zero-length packed sequence to Megatron. Resample the
+        # whole prompt group so every sample reaching the actor has matching
+        # tokens, masks, and rollout-policy log-probs.
+        return DynamicFilterOutput(keep=False, reason=f"removed_{removed_count}")
     active_rewards = [
         float(sample.get_reward_value(args))
         for sample in samples
-        if not getattr(sample, "remove_sample", False)
     ]
     if len(active_rewards) <= 1:
         return DynamicFilterOutput(keep=False, reason=f"active_{len(active_rewards)}")

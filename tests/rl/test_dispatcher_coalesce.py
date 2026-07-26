@@ -19,6 +19,8 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import threading
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from types import SimpleNamespace
@@ -298,6 +300,63 @@ async def test_four_simultaneous_yields_two_sbatch_pairs(
 
     assert sorted(sbatch_call_sizes) == [2, 2], (
         f"expected two sbatch with 2 tasks each, got {sbatch_call_sizes}"
+    )
+
+
+@pytest.mark.asyncio
+async def test_coalesced_sbatch_control_plane_calls_overlap(
+    scratch, fake_sbatch_script, relax_root, monkeypatch,
+):
+    """Blocking media/sbatch setup must not serialize the async event loop."""
+    lock = threading.Lock()
+    active = 0
+    max_active = 0
+    next_jid = 80000
+
+    def fake_sbatch(self, req_paths, res_paths, job_dir, chunk_idx):
+        nonlocal active, max_active, next_jid
+        with lock:
+            active += 1
+            max_active = max(max_active, active)
+            next_jid += 1
+            jid = next_jid
+        try:
+            time.sleep(0.1)
+            for p in res_paths:
+                p.write_text(json.dumps(_success_traj(0)))
+            return jid
+        finally:
+            with lock:
+                active -= 1
+
+    monkeypatch.setattr(SlurmDispatcher, "_sbatch", fake_sbatch)
+    monkeypatch.setattr(SlurmDispatcher, "_squeue_running", lambda self, jids: set())
+
+    d = SlurmDispatcher(
+        scratch_root=scratch,
+        sbatch_script=fake_sbatch_script,
+        tasks_per_job=1,
+        poll_interval_s=0.01,
+        coalesce_window_s=0.01,
+        dispatch_concurrency=4,
+    )
+    d.start()
+    try:
+        await asyncio.gather(*[
+            d.submit_and_collect(
+                _FakeRecord(id=f"overlap-{i}"),
+                _make_req(1),
+                Path("/data"),
+                deadline_s=10,
+            )
+            for i in range(4)
+        ])
+    finally:
+        await d.stop()
+
+    assert max_active >= 2, (
+        "expected blocking sbatch calls to overlap outside the event loop, "
+        f"observed max_active={max_active}"
     )
 
 

@@ -100,34 +100,69 @@ async def _lifespan(app: FastAPI):
     dataset_root = _env_path("DATASET_ROOT")
     runtime_root = _env_path("OMNICODING_RUNTIME_ROOT", str(Path.cwd()))
 
-    # Slurm-dispatch backend — replaces the prior in-process
-    # ``asyncio.to_thread`` model that bottlenecked at the default
-    # ThreadPoolExecutor cap (~8 on this 4-CPU host).
+    # Production on a single Slurm GPU node uses isolated Pyxis job steps
+    # within the existing allocation. The legacy sbatch backend remains for
+    # clusters that provide a separate CPU worker partition.
     scratch_root = Path(
         os.environ.get(
             "ROLLOUT_SCRATCH_ROOT",
             str(runtime_root / "scratch" / "rl_jobs"),
         )
     )
-    sbatch_script = _env_path("ROLLOUT_SBATCH_SCRIPT")
-    tasks_per_job = int(os.environ.get("ROLLOUT_TASKS_PER_JOB", "2"))
-    poll_interval_s = float(os.environ.get("ROLLOUT_POLL_INTERVAL_S", "15"))
-    coalesce_window_s = float(os.environ.get("ROLLOUT_COALESCE_WINDOW_S", "0.5"))
-    dispatcher = SlurmDispatcher(
-        scratch_root=scratch_root,
-        sbatch_script=sbatch_script,
-        tasks_per_job=tasks_per_job,
-        poll_interval_s=poll_interval_s,
-        coalesce_window_s=coalesce_window_s,
-    )
-    dispatcher.start()  # spawn background coalescer task
+    execution_backend = os.environ.get("ROLLOUT_EXECUTION_BACKEND", "sbatch").strip()
+    if execution_backend == "slurm_step":
+        from .slurm_step_dispatcher import SlurmStepDispatcher  # noqa: PLC0415
+
+        dispatcher = SlurmStepDispatcher(
+            scratch_root=scratch_root,
+            container_image=os.environ.get("ROLLOUT_CONTAINER_IMAGE", ""),
+            harness_venv=os.environ.get("ROLLOUT_HARNESS_VENV", ""),
+            max_concurrency=int(os.environ.get("ROLLOUT_STEP_CONCURRENCY", "12")),
+            cpus_per_rollout=int(os.environ.get("ROLLOUT_CPUS_PER_TASK", "2")),
+            memory_per_rollout=os.environ.get("ROLLOUT_MEMORY_PER_TASK", "8G"),
+            gpu_devices=tuple(
+                value.strip()
+                for value in os.environ.get("ROLLOUT_GPU_DEVICES", "").split(",")
+                if value.strip()
+            ),
+            rollouts_per_gpu=int(
+                os.environ.get("ROLLOUTS_PER_SANDBOX_GPU", "1")
+            ),
+        )
+        backend_detail = f"image={dispatcher.container_image}"
+    elif execution_backend == "sbatch":
+        sbatch_script = _env_path("ROLLOUT_SBATCH_SCRIPT")
+        tasks_per_job = int(os.environ.get("ROLLOUT_TASKS_PER_JOB", "2"))
+        poll_interval_s = float(os.environ.get("ROLLOUT_POLL_INTERVAL_S", "15"))
+        coalesce_window_s = float(os.environ.get("ROLLOUT_COALESCE_WINDOW_S", "0.5"))
+        dispatch_concurrency = int(os.environ.get("ROLLOUT_DISPATCH_CONCURRENCY", "8"))
+        dispatcher = SlurmDispatcher(
+            scratch_root=scratch_root,
+            sbatch_script=sbatch_script,
+            tasks_per_job=tasks_per_job,
+            poll_interval_s=poll_interval_s,
+            coalesce_window_s=coalesce_window_s,
+            dispatch_concurrency=dispatch_concurrency,
+        )
+        backend_detail = (
+            f"sbatch={sbatch_script} tasks_per_job={tasks_per_job} "
+            f"coalesce_window={coalesce_window_s:.2f}s"
+        )
+    else:
+        raise ValueError(
+            "ROLLOUT_EXECUTION_BACKEND must be 'slurm_step' or 'sbatch'"
+        )
+    dispatcher.start()
 
     app.state.records = load_records(rl_train)
     app.state.dataset_root = dataset_root
     app.state.dispatcher = dispatcher
     app.state.startup_ts = time.time()
     app.state.in_flight = 0
-    app.state.max_in_flight = int(os.environ.get("ROLLOUT_MAX_IN_FLIGHT", "64"))
+    # The shipped GSPO recipe fans out 16 prompts × 8 samples at once. Keep
+    # the no-env default large enough for one complete Relax rollout step;
+    # requests above this cap are rejected with 429 rather than queued.
+    app.state.max_in_flight = int(os.environ.get("ROLLOUT_MAX_IN_FLIGHT", "128"))
     app.state.max_queued_jobs = int(os.environ.get("ROLLOUT_MAX_QUEUED_JOBS", "256"))
     app.state.capacity_lock = asyncio.Lock()
     app.state.tasks: dict[str, asyncio.Task] = {}
@@ -136,9 +171,9 @@ async def _lifespan(app: FastAPI):
     gc_task = asyncio.create_task(_gc_loop(app), name="rollout-gc")
     LOGGER.info(
         "coordinator ready: %d records, dataset_root=%s, scratch_root=%s, "
-        "tasks_per_job=%d, coalesce_window=%.2fs, sbatch=%s",
+        "backend=%s, %s",
         len(app.state.records), dataset_root, scratch_root,
-        tasks_per_job, coalesce_window_s, sbatch_script,
+        execution_backend, backend_detail,
     )
     try:
         yield

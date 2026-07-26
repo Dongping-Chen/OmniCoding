@@ -127,6 +127,78 @@ def test_relax_release_has_27b_recipe_and_safe_config_template() -> None:
     )
 
 
+def test_qwen35_9b_training_recipes_disable_reference_kl_forward() -> None:
+    for path in (
+        Path("recipes/rl_qwen35_9b_4gpu_agent_rollout_smoke.sh"),
+        Path("recipes/rl_qwen35_9b_4gpu_gspo_smoke.sh"),
+    ):
+        recipe = path.read_text(encoding="utf-8")
+        assert "--kl-coef 0" in recipe
+        assert "--use-kl-loss" not in recipe
+        assert "--ref-load" not in recipe
+
+    kira_recipe = Path(
+        "recipes/rl_qwen35_9b_4gpu_agent_rollout_smoke.sh"
+    ).read_text(encoding="utf-8")
+    assert "--use-rollout-logprobs" in kira_recipe
+    assert "--use-dynamic-batch-size" in kira_recipe
+    assert "--max-tokens-per-gpu" in kira_recipe
+    assert "--disable-jit-fuser" in kira_recipe
+    assert 'export KIRA_MAX_TRAJECTORY_TOKENS="${kira_max_trajectory_tokens}"' in kira_recipe
+    assert '"KIRA_MAX_TRAJECTORY_TOKENS",' in kira_recipe
+    assert 'external_coordinator_url="${ROLLOUT_COORDINATOR_PUBLIC_URL:-}"' in kira_recipe
+    assert '"ROLLOUT_SGLANG_PUBLIC_URL",' in kira_recipe
+    assert "remote rollout coordinator did not become healthy" in kira_recipe
+
+
+def test_code_x_9b_default_training_recipe_uses_safe_8gpu_topology() -> None:
+    recipe = Path("recipes/rl_code_x_sft_9b_kira_gspo.sh").read_text(
+        encoding="utf-8"
+    )
+    expected_defaults = (
+        'MODEL_PATH:-${repo_root}/models/Code-X-SFT-9B',
+        'NUM_GPUS:-8',
+        'ACTOR_TP:-8',
+        'ACTOR_CP:-1',
+        'ROLLOUT_GPUS_PER_ENGINE:-1',
+        'ROLLOUT_BATCH_SIZE:-2',
+        'N_SAMPLES_PER_PROMPT:-4',
+        'KIRA_MAX_TURNS:-50',
+        'KIRA_MAX_TRAJECTORY_TOKENS:-48000',
+        'MAX_TOKENS_PER_GPU:-48000',
+        'SGLANG_CONTEXT_LENGTH:-131072',
+        'USE_ROLLOUT_LOGPROBS:-1',
+    )
+    for default in expected_defaults:
+        assert default in recipe
+
+    sbatch_recipe = Path(
+        "recipes/rl_code_x_sft_9b_8gpu_kira_gspo_smoke.sbatch"
+    ).read_text(encoding="utf-8")
+    assert "#SBATCH --gres=gpu:h100:8" in sbatch_recipe
+    assert "bash recipes/rl_code_x_sft_9b_kira_gspo.sh" in sbatch_recipe
+    assert "ACTOR_TP=4" not in sbatch_recipe
+
+
+def test_sglang_http_parent_is_pinned_to_engine_gpu() -> None:
+    patch = Path(
+        "integrations/relax/patches/0005-sglang-parent-gpu-affinity.patch"
+    ).read_text(encoding="utf-8")
+    assert "+def _launch_server_on_assigned_gpu(" in patch
+    assert "+        torch.cuda.set_device(int(server_args.base_gpu_id))" in patch
+    assert "+        target=_launch_server_on_assigned_gpu," in patch
+
+
+def test_relax_actor_stage_profiler_is_persisted_as_patch() -> None:
+    patch = Path(
+        "integrations/relax/patches/0006-train-stage-profiling.patch"
+    ).read_text(encoding="utf-8")
+    assert '+    return os.environ.get("RELAX_PROFILE_TRAIN_STAGES", "0")' in patch
+    assert '"forward_backward"' in patch
+    assert '"optimizer"' in patch
+    assert '"clear_grad"' in patch
+
+
 def test_relax_recipe_keeps_token_value_out_of_ray_arguments(tmp_path: Path) -> None:
     relax_root = tmp_path / "Relax"
     model_config = relax_root / "scripts" / "models" / "qwen36-27B.sh"

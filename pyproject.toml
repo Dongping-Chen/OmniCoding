@@ -21,7 +21,9 @@ benchmark = [
   "pillow>=10",
 ]
 rl = [
-  "fastapi>=0.115",
+  # FastAPI 0.139.2 adds an unpicklable lock to the app object and breaks
+  # Ray Serve 2.56 @serve.ingress serialization.
+  "fastapi==0.133.0",
   "httpx>=0.27",
   "pillow>=10",
   "pydantic>=2.7",
