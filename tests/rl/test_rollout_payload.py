@@ -29,6 +29,22 @@ def _args():
     )
 
 
+@pytest.fixture
+def relax_types_stub(monkeypatch):
+    sample_type = SimpleNamespace(
+        Status=SimpleNamespace(
+            COMPLETED="completed",
+            FAILED="failed",
+            TRUNCATED="truncated",
+        )
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "relax.utils.types",
+        SimpleNamespace(Sample=sample_type),
+    )
+
+
 def test_payload_uses_bounded_default_per_turn_output(monkeypatch) -> None:
     monkeypatch.delenv("KIRA_MAX_TOKENS_PER_TURN", raising=False)
 
@@ -64,7 +80,7 @@ def test_sglang_model_keeps_existing_litellm_prefix(monkeypatch) -> None:
     )
 
 
-def test_failed_sample_marks_rollout_log_probs_ready() -> None:
+def test_failed_sample_marks_rollout_log_probs_ready(relax_types_stub) -> None:
     sample = SimpleNamespace(metadata={"task_id": "fixture:1"})
 
     result = _failed_sample(sample, "fixture failure")
@@ -83,7 +99,10 @@ def test_trajectory_limit_rejects_invalid_values(monkeypatch, value: str) -> Non
 
 
 @pytest.mark.asyncio
-async def test_overlong_kira_rollout_is_removed_before_logprob_scoring(monkeypatch) -> None:
+async def test_overlong_kira_rollout_is_removed_before_logprob_scoring(
+    monkeypatch,
+    relax_types_stub,
+) -> None:
     monkeypatch.setenv("KIRA_MAX_TRAJECTORY_TOKENS", "2")
     monkeypatch.setattr(
         rollout,
