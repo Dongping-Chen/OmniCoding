@@ -1,0 +1,36 @@
+# Metadata export
+PyYAML>=6.0
+
+# Shared judge clients
+openai>=1.60
+requests>=2.31
+
+# Core numerical, image, geospatial, and audio stack used across graders
+numpy>=1.26
+opencv-python-headless>=4.10
+Pillow>=10
+scipy>=1.12
+scikit-image>=0.22
+scikit-learn>=1.4
+soundfile>=0.12
+pyproj>=3.6
+rasterio>=1.3
+shapely>=2.0
+
+# ASR and text metrics
+faster-whisper>=1.0
+jiwer>=3.0
+sacrebleu>=2.4
+
+# Specialized audio/document graders
+librosa>=0.10
+pyloudnorm>=0.1.1
+pypdf>=4.0
+pysptk>=0.2
+pystoi>=0.4
+pyworld>=0.3
+speechbrain>=1.0
+webrtcvad>=2.0
+
+# Install a platform-compatible torch/torchaudio/torchvision stack separately.
+# pyannote.audio is optional and used only by speaker-embedding dimensions.

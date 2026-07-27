@@ -42,6 +42,12 @@ The adapter code stays in this GitHub repository. Dataset cards link back to
 the adapter and pinned code release; code recipes link to pinned dataset
 revisions.
 
+TerminalBench-O follows the reconstruction-manifest model: its Hugging Face
+repository publishes 50 task definitions plus aggregate fixture/reference
+inventories, while `integrations/terminalbench_o/` publishes the graders and
+runner. Raw media, hidden references, model outputs, environment files,
+cookies, and credentials are excluded from both public repositories.
+
 See `release/DATA_LICENSE_REVIEW.md` for the current per-source blockers. In
 particular, a single combined upload must not erase non-commercial,
 no-derivatives, unspecified, or media-level restrictions.

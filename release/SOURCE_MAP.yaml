@@ -25,6 +25,11 @@ sources:
     archival_label: Relax
     revision: 9a717a82aa20a1088f725cb56990c6186e0fb7a0
     dirty_worktree_audited: true
+  terminalbench_o:
+    repository: null
+    archival_label: OmniProcessing/blaw_bench_50_0506_full
+    revision: terminalbench_o_v1_20260507
+    dirty_worktree_audited: null
 
 mappings:
   - source: omnicoding/local_model/kira
@@ -59,3 +64,11 @@ mappings:
     destination: src/omnicoding/rl and integrations/relax
     kind: integration_package
     status: migrated_and_security_hardened
+  - source: terminalbench_o/tasks/*/task.yaml
+    destination: shuaishuaicdp/TerminalBench-O
+    kind: metadata_only_dataset
+    status: exported_without_fixtures_or_hidden_references
+  - source: terminalbench_o/tasks/*/grader.py and terminalbench_o/_lib
+    destination: integrations/terminalbench_o
+    kind: evaluation_integration
+    status: migrated_and_credentials_removed

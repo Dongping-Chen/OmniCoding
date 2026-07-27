@@ -37,12 +37,14 @@ process-aware verifiable reward.
 | OmniCoding SFT Task Dataset | SFT trajectory collection | [🤗 Dataset](https://huggingface.co/datasets/shuaishuaicdp/OmniCoding/blob/ecc1fa1b8297aca618a931ad322de4d4cb75fd65/processed/sft_train.jsonl) | 4,042 refined tasks; collect successful coding-agent trajectories and convert them to ms-swift Agent JSONL before training |
 | OmniCoding RL Prompt Dataset | RL prompt construction | [🤗 Dataset](https://huggingface.co/datasets/shuaishuaicdp/OmniCoding/blob/ecc1fa1b8297aca618a931ad322de4d4cb75fd65/processed/rl_train.jsonl) | 1,993 prompts with verifiable answers used to construct Relax prompt data |
 | OmniCoding Source Benchmark Corpus | Task curation and reconstruction | [🤗 Dataset](https://huggingface.co/datasets/shuaishuaicdp/OmniCoding/blob/ecc1fa1b8297aca618a931ad322de4d4cb75fd65/processed/refine/all_final.jsonl) | 6,035-row pre-split source corpus used to form the SFT and RL task splits; **not** a held-out evaluation set |
+| TerminalBench-O | Held-out terminal-agent evaluation | [🤗 Metadata](https://huggingface.co/datasets/shuaishuaicdp/TerminalBench-O) · [Evaluator](integrations/terminalbench_o/README.md) | 50 public task definitions and released graders; raw fixtures, hidden references, outputs, and credentials are excluded |
 | Code-X-SFT-27B | Inference and evaluation | [🤗 Model](https://huggingface.co/shuaishuaicdp/Code-X-SFT-27B) | 27B SFT checkpoint based on Qwen3.6-27B |
 
 The 27B release is a supervised fine-tune of
 [Qwen/Qwen3.6-27B](https://huggingface.co/Qwen/Qwen3.6-27B). The three data
-artifacts above are hosted in one Hugging Face dataset repository at the
-pinned revision shown in the table.
+artifacts used for training are hosted in one Hugging Face dataset repository
+at the pinned revision shown in the table. TerminalBench-O is a separate,
+metadata-only evaluation dataset.
 
 > **Data notice:** The dataset aggregates sources with different upstream
 > terms. Some records or media originate from CC BY-NC-ND or
@@ -120,6 +122,7 @@ integrations/
   ms_swift/             SFT and LoRA consolidation integration
   sglang/               checkpoint serving integration
   relax/                pinned RL integration and reviewable upstream patches
+  terminalbench_o/       50-task public evaluator and metadata exporter
 infra/slurm/             portable Slurm templates for harness, SFT, serving, RL
 recipes/                 example run configuration
 release/                 source, trajectory, exclusion, and license audits
