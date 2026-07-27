@@ -146,6 +146,13 @@ def test_qwen35_9b_training_recipes_disable_reference_kl_forward() -> None:
     assert "--disable-jit-fuser" in kira_recipe
     assert 'export KIRA_MAX_TRAJECTORY_TOKENS="${kira_max_trajectory_tokens}"' in kira_recipe
     assert '"KIRA_MAX_TRAJECTORY_TOKENS",' in kira_recipe
+    assert (
+        'PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True'
+        in kira_recipe
+    )
+    assert '"PYTORCH_CUDA_ALLOC_CONF",' in kira_recipe
+    assert 'NCCL_BUFFSIZE:-1048576' in kira_recipe
+    assert '"NCCL_BUFFSIZE",' in kira_recipe
     assert 'external_coordinator_url="${ROLLOUT_COORDINATOR_PUBLIC_URL:-}"' in kira_recipe
     assert '"ROLLOUT_SGLANG_PUBLIC_URL",' in kira_recipe
     assert "remote rollout coordinator did not become healthy" in kira_recipe
@@ -158,7 +165,8 @@ def test_code_x_9b_default_training_recipe_uses_safe_8gpu_topology() -> None:
     expected_defaults = (
         'MODEL_PATH:-${repo_root}/models/Code-X-SFT-9B',
         'NUM_GPUS:-8',
-        'ACTOR_TP:-8',
+        'ACTOR_TP:-4',
+        'ACTOR_PP:-2',
         'ACTOR_CP:-1',
         'ROLLOUT_GPUS_PER_ENGINE:-1',
         'ROLLOUT_BATCH_SIZE:-2',
@@ -180,23 +188,32 @@ def test_code_x_9b_default_training_recipe_uses_safe_8gpu_topology() -> None:
     ).read_text(encoding="utf-8")
     assert "#SBATCH --gres=gpu:h100:8" in sbatch_recipe
     assert "bash recipes/rl_code_x_sft_9b_kira_gspo.sh" in sbatch_recipe
-    assert "ACTOR_TP=4" not in sbatch_recipe
+    assert "ACTOR_TP=8" not in sbatch_recipe
 
 
-def test_code_x_9b_tp8_actor_replay_stresses_previous_oom_sequence() -> None:
+def test_code_x_9b_eight_gpu_actor_replay_stresses_previous_oom_sequence() -> None:
     replay = Path(
         "recipes/rl_code_x_sft_9b_8gpu_actor_replay.sbatch"
     ).read_text(encoding="utf-8")
     assert "#SBATCH --gres=gpu:h100:8" in replay
     assert "export NUM_GPUS=8" in replay
-    assert "export ACTOR_TP=8" in replay
+    assert "export ACTOR_TP=4" in replay
+    assert "export ACTOR_PP=2" in replay
     assert "export ACTOR_CP=1" in replay
     assert "export MAX_TOKENS_PER_GPU=\"${MAX_TOKENS_PER_GPU:-100000}\"" in replay
     assert "export USE_ROLLOUT_LOGPROBS=1" in replay
     assert "export RELAX_PROFILE_TRAIN_STAGES=1" in replay
+
+    launcher = Path(
+        "recipes/rl_qwen35_9b_4gpu_agent_rollout_smoke.sh"
+    ).read_text(encoding="utf-8")
+    assert "model_num_query_groups % actor_tp != 0" in launcher
+    assert "--pipeline-model-parallel-size \"${actor_pp}\"" in launcher
     assert "#SBATCH --time=04:00:00" in replay
     assert "bash recipes/rl_code_x_sft_9b_kira_gspo.sh" in replay
     assert "gpu-peak-memory.csv" in replay
+    assert "CUDA calloc.*bytes" in replay
+    assert "actor-replay-summary.log" in replay
     assert "cuda_oom_detected" in replay
 
 

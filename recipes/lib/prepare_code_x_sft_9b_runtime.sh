@@ -85,6 +85,7 @@ prepare_code_x_sft_9b_runtime() {
   export TORCH_EXTENSIONS_DIR="${cache_root}/torch-extensions"
   export CUDA_CACHE_PATH="${cache_root}/cuda"
   export CUDA_CACHE_MAXSIZE="${CUDA_CACHE_MAXSIZE:-4294967296}"
+  export CUDA_DEVICE_MAX_CONNECTIONS="${CUDA_DEVICE_MAX_CONNECTIONS:-1}"
   mkdir -p \
     "${local_root}" \
     "${PYTHONPYCACHEPREFIX}" \
@@ -154,7 +155,7 @@ prepare_code_x_sft_9b_runtime() {
   fi
 
   if [[ -z "${ACTOR_LOAD:-}" && "${preconvert_dcp}" == 1 ]]; then
-    local shared_dcp="${ACTOR_DCP_CACHE:-${repo_root}/models/Code-X-SFT-9B-mcore-tp${ACTOR_TP:-8}}"
+    local shared_dcp="${ACTOR_DCP_CACHE:-${repo_root}/models/Code-X-SFT-9B-mcore-tp${ACTOR_TP:-4}-pp${ACTOR_PP:-2}}"
     if ! _code_x_checkpoint_is_complete "${shared_dcp}"; then
       started_at="$(date +%s)"
       # shellcheck disable=SC1090
@@ -166,8 +167,8 @@ prepare_code_x_sft_9b_runtime() {
           --hf-checkpoint "${MODEL_PATH}" \
           --save "${shared_dcp}" \
           --megatron-to-hf-mode bridge \
-          --tensor-model-parallel-size "${ACTOR_TP:-8}" \
-          --pipeline-model-parallel-size 1 \
+          --tensor-model-parallel-size "${ACTOR_TP:-4}" \
+          --pipeline-model-parallel-size "${ACTOR_PP:-2}" \
           --context-parallel-size "${ACTOR_CP:-1}" \
           --expert-model-parallel-size 1 \
           --expert-tensor-parallel-size 1 \

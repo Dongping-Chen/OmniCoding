@@ -2,13 +2,14 @@
 # Default Code-X-SFT-9B Kira GSPO training entry point.
 #
 # Topology:
-#   actor:   8 H100, TP=8 / CP=1 / DP=1
+#   actor:   8 H100, TP=4 / PP=2 / CP=1 / DP=1
 #   rollout: 8 independent TP1 SGLang engines
 #   batch:   2 RL prompts x 4 trajectories = 8 concurrent trajectories
 #
 # Qwen3.5 GatedDeltaNet does not support context parallel in the installed
-# Megatron build. TP8 gives every long sequence the full 8-GPU model shard and
-# avoids DP straggler imbalance between intact four-sample GSPO groups.
+# Megatron build, while its four KV groups make TP8 invalid in Megatron.
+# TP4 x PP2 still shards every long sequence over all eight GPUs and avoids DP
+# straggler imbalance between intact four-sample GSPO groups.
 set -euo pipefail
 
 repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -16,7 +17,8 @@ repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 export MODEL_PATH="${MODEL_PATH:-${repo_root}/models/Code-X-SFT-9B}"
 export PROMPT_DATA="${PROMPT_DATA:-${repo_root}/data/omnicoding/processed/rl_smoke_small_media.parquet}"
 export NUM_GPUS="${NUM_GPUS:-8}"
-export ACTOR_TP="${ACTOR_TP:-8}"
+export ACTOR_TP="${ACTOR_TP:-4}"
+export ACTOR_PP="${ACTOR_PP:-2}"
 export ACTOR_CP="${ACTOR_CP:-1}"
 export LOG_PROBS_CHUNK_SIZE="${LOG_PROBS_CHUNK_SIZE:-4096}"
 export ROLLOUT_GPUS_PER_ENGINE="${ROLLOUT_GPUS_PER_ENGINE:-1}"
@@ -42,7 +44,7 @@ export RELAX_PROFILE_TRAIN_STAGES="${RELAX_PROFILE_TRAIN_STAGES:-1}"
 export OUTPUT_ROOT="${OUTPUT_ROOT:-${repo_root}/outputs/relax-code-x-sft-kira-gspo/${SLURM_JOB_ID:-manual}-8gpu}"
 export STAGE_TO_LOCAL_NVME="${STAGE_TO_LOCAL_NVME:-1}"
 export PRECONVERT_ACTOR_DCP="${PRECONVERT_ACTOR_DCP:-1}"
-export ACTOR_DCP_CACHE="${ACTOR_DCP_CACHE:-${repo_root}/models/Code-X-SFT-9B-mcore-tp${ACTOR_TP}}"
+export ACTOR_DCP_CACHE="${ACTOR_DCP_CACHE:-${repo_root}/models/Code-X-SFT-9B-mcore-tp${ACTOR_TP}-pp${ACTOR_PP}}"
 export COLD_START_TIMING_FILE="${COLD_START_TIMING_FILE:-${OUTPUT_ROOT}/cold-start-stages.tsv}"
 
 # shellcheck disable=SC1091

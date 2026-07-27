@@ -70,6 +70,7 @@ fi
 
 num_gpus="${NUM_GPUS:-8}"
 actor_tp="${ACTOR_TENSOR_PARALLEL_SIZE:-${ACTOR_TP:-${num_gpus}}}"
+actor_pp="${ACTOR_PIPELINE_PARALLEL_SIZE:-${ACTOR_PP:-1}}"
 actor_cp="${ACTOR_CONTEXT_PARALLEL_SIZE:-${ACTOR_CP:-1}}"
 rollout_gpus_per_engine="${ROLLOUT_GPUS_PER_ENGINE:-1}"
 rollout_batch_size="${ROLLOUT_BATCH_SIZE:-2}"
@@ -131,8 +132,8 @@ if (( num_gpus < 1 )); then
   echo "NUM_GPUS must be positive" >&2
   exit 2
 fi
-if (( actor_tp < 1 || actor_cp < 1 || micro_batch_size < 1 || max_tokens_per_gpu < 1 )); then
-  echo "actor TP, actor CP, micro batch size, and MAX_TOKENS_PER_GPU must be positive" >&2
+if (( actor_tp < 1 || actor_pp < 1 || actor_cp < 1 || micro_batch_size < 1 || max_tokens_per_gpu < 1 )); then
+  echo "actor TP, actor PP, actor CP, micro batch size, and MAX_TOKENS_PER_GPU must be positive" >&2
   exit 2
 fi
 if [[ ! "${kira_max_trajectory_tokens}" =~ ^[1-9][0-9]*$ ]]; then
@@ -143,11 +144,31 @@ if (( sglang_chunked_prefill_size < 1 || sglang_max_prefill_tokens < sglang_chun
   echo "SGLANG_MAX_PREFILL_TOKENS must be >= positive SGLANG_CHUNKED_PREFILL_SIZE" >&2
   exit 2
 fi
-if (( num_gpus % (actor_tp * actor_cp) != 0 || num_gpus % rollout_gpus_per_engine != 0 )); then
-  echo "NUM_GPUS must be divisible by actor TP*CP and rollout TP sizes" >&2
+if (( num_gpus % (actor_tp * actor_pp * actor_cp) != 0 || num_gpus % rollout_gpus_per_engine != 0 )); then
+  echo "NUM_GPUS must be divisible by actor TP*PP*CP and rollout TP sizes" >&2
   exit 2
 fi
-actor_dp=$((num_gpus / (actor_tp * actor_cp)))
+actor_dp=$((num_gpus / (actor_tp * actor_pp * actor_cp)))
+model_num_query_groups="$("${venv_root}/bin/python" - "${model_path}/config.json" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as handle:
+    config = json.load(handle)
+text_config = config.get("text_config", config)
+value = text_config.get("num_key_value_heads", text_config.get("num_query_groups"))
+print("" if value is None else value)
+PY
+)"
+if [[ -n "${model_num_query_groups}" ]] && \
+   (( model_num_query_groups % actor_tp != 0 )); then
+  cat >&2 <<EOF
+invalid actor TP=${actor_tp}: model num_query_groups=${model_num_query_groups}
+must be divisible by tensor parallel size in Megatron. For this Qwen3.5-9B
+model on 8 GPUs, use ACTOR_TP=4 and ACTOR_PP=2.
+EOF
+  exit 2
+fi
 if [[ "${debug_rollout_only}" == 0 ]] && (( rollout_batch_size % actor_dp != 0 )); then
   cat >&2 <<EOF
 invalid GSPO group placement: ROLLOUT_BATCH_SIZE=${rollout_batch_size} prompts
@@ -222,6 +243,14 @@ export CUDA_DEVICE_MAX_CONNECTIONS=1
 export CUDA_HOME="${CUDA_HOME:-/usr/local/cuda-12.9}"
 export FLASHINFER_DISABLE_VERSION_CHECK=1
 export TOKENIZERS_PARALLELISM=true
+# Long, dynamically packed RL batches create several differently sized
+# full-vocabulary buffers.  Let the CUDA allocator grow segments instead of
+# leaving large but unusable holes between those buffers.
+export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}"
+# NCCL normally allocates 4 MiB peer buffers lazily.  At the end of a long
+# actor backward the first grad-norm collective can run with almost no device
+# memory left, so use its documented memory-constrained 1 MiB setting.
+export NCCL_BUFFSIZE="${NCCL_BUFFSIZE:-1048576}"
 export PATH="${venv_root}/bin:${PATH}"
 export RAY_SERVE_PROXY_HEALTH_CHECK_TIMEOUT_S="${RAY_SERVE_PROXY_HEALTH_CHECK_TIMEOUT_S:-120}"
 export RELAX="${relax_root}"
@@ -437,6 +466,8 @@ names = (
     "CUDA_HOME",
     "FLASHINFER_DISABLE_VERSION_CHECK",
     "TOKENIZERS_PARALLELISM",
+    "PYTORCH_CUDA_ALLOC_CONF",
+    "NCCL_BUFFSIZE",
     "PYTHONPYCACHEPREFIX",
     "TRITON_CACHE_DIR",
     "TORCHINDUCTOR_CACHE_DIR",
@@ -570,7 +601,7 @@ fi
   --use-precision-aware-optimizer \
   --tensor-model-parallel-size "${actor_tp}" \
   --sequence-parallel \
-  --pipeline-model-parallel-size 1 \
+  --pipeline-model-parallel-size "${actor_pp}" \
   --context-parallel-size "${actor_cp}" \
   --expert-model-parallel-size 1 \
   --expert-tensor-parallel-size 1 \

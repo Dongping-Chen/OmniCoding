@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-#SBATCH --job-name=code-x-tp8-actor-replay
+#SBATCH --job-name=code-x-8gpu-actor-replay
 #SBATCH --partition=h100
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
@@ -9,7 +9,9 @@
 #SBATCH --time=04:00:00
 #SBATCH --output=slurm-%x-%j.out
 
-# TP8 actor-update stress test using a previously generated Kira rollout.
+# Eight-GPU TP4 x PP2 actor-update stress test using a previously generated
+# Kira rollout. Pure TP8 is invalid for Qwen3.5-9B because its four KV groups
+# are not divisible by eight.
 #
 # The default replay contains four trajectories with 79,786, 15,797, 22,049,
 # and 31,608 total tokens. MAX_TOKENS_PER_GPU=100000 deliberately admits the
@@ -27,7 +29,8 @@ if [[ ! -f "${replay_data}" ]]; then
 fi
 
 export NUM_GPUS=8
-export ACTOR_TP=8
+export ACTOR_TP=4
+export ACTOR_PP=2
 export ACTOR_CP=1
 export MODEL_PATH="${MODEL_PATH:-${repo_root}/models/Code-X-SFT-9B}"
 export LOAD_DEBUG_ROLLOUT_DATA="${replay_data}"
@@ -42,9 +45,9 @@ export DISABLE_JIT_FUSER=1
 export RELAX_PROFILE_TRAIN_STAGES=1
 export STAGE_TO_LOCAL_NVME="${STAGE_TO_LOCAL_NVME:-1}"
 export PRECONVERT_ACTOR_DCP="${PRECONVERT_ACTOR_DCP:-1}"
-export ACTOR_DCP_CACHE="${ACTOR_DCP_CACHE:-${repo_root}/models/Code-X-SFT-9B-mcore-tp8}"
+export ACTOR_DCP_CACHE="${ACTOR_DCP_CACHE:-${repo_root}/models/Code-X-SFT-9B-mcore-tp4-pp2}"
 export RAY_NUM_CPUS="${RAY_NUM_CPUS:-${SLURM_CPUS_PER_TASK:-64}}"
-export OUTPUT_ROOT="${OUTPUT_ROOT:-${repo_root}/outputs/profiles/${SLURM_JOB_ID}-actor-replay-tp8-full}"
+export OUTPUT_ROOT="${OUTPUT_ROOT:-${repo_root}/outputs/profiles/${SLURM_JOB_ID}-actor-replay-8gpu-tp4-pp2-full}"
 export COLD_START_TIMING_FILE="${COLD_START_TIMING_FILE:-${OUTPUT_ROOT}/cold-start-stages.tsv}"
 
 mkdir -p "${OUTPUT_ROOT}"
@@ -118,11 +121,12 @@ PY
 
 oom_detected=0
 if [[ -f "${OUTPUT_ROOT}/kira-gspo.log" ]] && \
-   grep -Eiq 'CUDA out of memory|torch\\.OutOfMemoryError|OutOfMemoryError' \
+   grep -Eiq \
+     "CUDA out of memory|torch\\.OutOfMemoryError|OutOfMemoryError|CUDA calloc.*bytes|Cuda failure 'out of memory'" \
      "${OUTPUT_ROOT}/kira-gspo.log"; then
   oom_detected=1
 fi
 printf 'exit_status=%d wall_time_s=%d cuda_oom_detected=%d\n' \
   "${status}" "$((finished_at - started_at))" "${oom_detected}" \
-  | tee "${OUTPUT_ROOT}/tp8-replay-summary.log"
+  | tee "${OUTPUT_ROOT}/actor-replay-summary.log"
 exit "${status}"
