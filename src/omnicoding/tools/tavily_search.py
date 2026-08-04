@@ -2,9 +2,10 @@
 
 Reads one key from ``$TAVILY_API_KEY`` or multiple keys from the explicitly
 configured ``$TAVILY_KEYS_FILE`` (one per line; blank/`#`-prefixed lines are
-ignored). On HTTP 429 / quota error the current key is retired (this process
-only) and the next non-blacklisted key is tried; raise ``TavilyExhausted`` if
-every key is dead.
+ignored). Permanent authentication/quota failures retire a key for this
+process. HTTP 429 rate limits instead honor ``Retry-After`` with a temporary
+cooldown. A key is leased to at most one upstream request at a time so a local
+burst cannot stampede the same development key.
 """
 
 from __future__ import annotations
@@ -13,6 +14,9 @@ import json
 import os
 import random
 import threading
+import time
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 from pathlib import Path
 from typing import Any
 
@@ -22,7 +26,14 @@ TAVILY_ENDPOINT = "https://api.tavily.com/search"
 DEFAULT_TIMEOUT_S = 30.0
 
 _lock = threading.Lock()
+_state_changed = threading.Condition(_lock)
 _blacklist: set[str] = set()
+_cooldown_until: dict[str, float] = {}
+_in_flight: set[str] = set()
+
+DEFAULT_RATE_LIMIT_COOLDOWN_S = 60.0
+MIN_KEY_START_INTERVAL_S = 0.6
+MAX_TOTAL_TIMEOUT_S = 40.0
 
 
 class TavilyError(RuntimeError):
@@ -31,6 +42,10 @@ class TavilyError(RuntimeError):
 
 class TavilyExhausted(TavilyError):
     """All known Tavily API keys returned quota / auth errors."""
+
+
+class TavilyRateLimited(TavilyError):
+    """All usable Tavily keys are temporarily rate-limited."""
 
 
 def _load_keys() -> list[str]:
@@ -62,13 +77,109 @@ def _load_keys() -> list[str]:
 
 
 def _is_quota_error(status: int, body: str) -> bool:
-    if status in (401, 402, 403, 429):
+    if status in (401, 402, 403):
         return True
     body_lower = body.lower()
     return any(
         marker in body_lower
-        for marker in ("quota", "rate limit", "exceeded", "unauthorized", "invalid api key")
+        for marker in (
+            "quota",
+            "usage limit",
+            "credit limit",
+            "monthly limit",
+            "plan limit",
+            "unauthorized",
+            "invalid api key",
+        )
     )
+
+
+def _rate_limit_cooldown_s(headers: Any) -> float:
+    raw_value = headers.get("retry-after") if headers is not None else None
+    if raw_value is None:
+        raw_value = headers.get("Retry-After") if headers is not None else None
+    if raw_value is None:
+        return DEFAULT_RATE_LIMIT_COOLDOWN_S
+    try:
+        return max(0.0, float(raw_value))
+    except (TypeError, ValueError):
+        try:
+            retry_at = parsedate_to_datetime(str(raw_value))
+            if retry_at.tzinfo is None:
+                retry_at = retry_at.replace(tzinfo=timezone.utc)
+            return max(0.0, (retry_at - datetime.now(timezone.utc)).total_seconds())
+        except (TypeError, ValueError, OverflowError):
+            return DEFAULT_RATE_LIMIT_COOLDOWN_S
+
+
+def _acquire_key(
+    keys: list[str],
+    attempted: set[str],
+    *,
+    deadline: float,
+) -> str:
+    with _state_changed:
+        while True:
+            now = time.monotonic()
+            remaining = deadline - now
+            if remaining <= 0:
+                raise TavilyRateLimited("timed out waiting for an available Tavily key")
+            live = [key for key in keys if key not in _blacklist and key not in attempted]
+            if not live:
+                raise TavilyExhausted("all Tavily keys exhausted for this request")
+            available = [
+                key
+                for key in live
+                if key not in _in_flight and _cooldown_until.get(key, 0.0) <= now
+            ]
+            if available:
+                random.shuffle(available)
+                key = available[0]
+                _in_flight.add(key)
+                _cooldown_until[key] = max(
+                    _cooldown_until.get(key, 0.0),
+                    now + MIN_KEY_START_INTERVAL_S,
+                )
+                return key
+
+            cooling = [
+                _cooldown_until.get(key, 0.0) - now
+                for key in live
+                if key not in _in_flight and _cooldown_until.get(key, 0.0) > now
+            ]
+            if len(cooling) == len(live):
+                earliest = min(cooling)
+                if earliest > remaining:
+                    retry_after = max(1, int(earliest + 0.999))
+                    raise TavilyRateLimited(
+                        f"all Tavily keys temporarily rate-limited; retry after {retry_after}s"
+                    )
+                _state_changed.wait(timeout=earliest)
+                continue
+
+            wait_s = min(remaining, 1.0)
+            if cooling:
+                wait_s = min(wait_s, min(cooling))
+            _state_changed.wait(timeout=wait_s)
+
+
+def _release_key(
+    key: str,
+    *,
+    permanent: bool = False,
+    cooldown_s: float | None = None,
+) -> None:
+    with _state_changed:
+        _in_flight.discard(key)
+        if permanent:
+            _blacklist.add(key)
+            _cooldown_until.pop(key, None)
+        elif cooldown_s is not None:
+            _cooldown_until[key] = max(
+                _cooldown_until.get(key, 0.0),
+                time.monotonic() + cooldown_s,
+            )
+        _state_changed.notify_all()
 
 
 def search(
@@ -84,14 +195,17 @@ def search(
 
     Returns the raw JSON response from Tavily on success.
     """
-    keys = _load_keys()
-    with _lock:
-        live = [k for k in keys if k not in _blacklist]
-    if not live:
-        raise TavilyExhausted("all Tavily keys blacklisted in this process")
-    random.shuffle(live)
+    keys = list(dict.fromkeys(_load_keys()))
+    attempted: set[str] = set()
     last_err: str | None = None
-    for key in live:
+    saw_rate_limit = False
+    deadline = time.monotonic() + min(max(timeout_s, 0.1), MAX_TOTAL_TIMEOUT_S)
+    while len(attempted) < len(keys):
+        try:
+            key = _acquire_key(keys, attempted, deadline=deadline)
+        except TavilyExhausted:
+            break
+        attempted.add(key)
         payload = {
             "api_key": key,
             "query": query,
@@ -100,20 +214,34 @@ def search(
             "include_answer": include_answer,
             "include_raw_content": include_raw_content,
         }
+        permanent = False
+        cooldown_s: float | None = None
         try:
-            r = requests.post(TAVILY_ENDPOINT, json=payload, timeout=timeout_s)
-        except requests.RequestException as exc:
-            last_err = f"network: {exc}"
-            continue
-        if r.status_code == 200:
-            return r.json()
-        if _is_quota_error(r.status_code, r.text):
-            with _lock:
-                _blacklist.add(key)
-            last_err = f"key dead ({r.status_code}): {r.text[:200]}"
-            continue
-        # Non-quota error (e.g. 400 bad request): bubble up — no point trying other keys.
-        raise TavilyError(f"Tavily {r.status_code}: {r.text[:500]}")
+            remaining_s = deadline - time.monotonic()
+            if remaining_s <= 0:
+                raise TavilyRateLimited("Tavily request deadline expired before dispatch")
+            try:
+                r = requests.post(TAVILY_ENDPOINT, json=payload, timeout=remaining_s)
+            except requests.RequestException as exc:
+                last_err = f"network: {exc}"
+                continue
+            if r.status_code == 200:
+                return r.json()
+            if _is_quota_error(r.status_code, r.text):
+                permanent = True
+                last_err = f"key dead ({r.status_code}): {r.text[:200]}"
+                continue
+            if r.status_code == 429:
+                cooldown_s = _rate_limit_cooldown_s(r.headers)
+                saw_rate_limit = True
+                last_err = f"key rate-limited ({cooldown_s:.0f}s): {r.text[:200]}"
+                continue
+            # Non-quota error (e.g. 400 bad request): trying another key cannot help.
+            raise TavilyError(f"Tavily {r.status_code}: {r.text[:500]}")
+        finally:
+            _release_key(key, permanent=permanent, cooldown_s=cooldown_s)
+    if saw_rate_limit:
+        raise TavilyRateLimited(f"all available Tavily keys rate-limited; last={last_err}")
     raise TavilyExhausted(f"all keys failed; last={last_err}")
 
 
